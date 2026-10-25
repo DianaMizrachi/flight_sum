@@ -1,0 +1,44 @@
+# טקסונומיה ראשונית של סוגי אירועים (שלב 0, משימה 3).
+# כל סוג: מזהה יציב, תוויות בעברית, סוגי הישויות שהוא חל עליהם,
+# שדות חובה נוספים לאימות (רכיב 5), ודוגמאות קצרות שישמשו גם את
+# ה-prompt של מנוע ה-LLM (רכיב 4).
+
+- id: contact_with_target
+  label_he: "קשר עם מטרה"
+  description_he: >
+    דיווח על יצירת קשר, זיהוי חזותי/חושי או מעקב אחר מטרה.
+  applicable_entity_types: [target]
+  required_fields: [entities]
+  examples_he:
+    - "יש לנו קשר עם מטרה אלפא, טווח 4 קילומטר."
+    - "מזהים חזותית את הרכב החשוד בצומת הצפוני."
+
+- id: loss_of_contact
+  label_he: "אובדן קשר"
+  description_he: >
+    דיווח על אובדן קשר, ירידת קשר תקשורת, או היעלמות מטרה ממעקב.
+  applicable_entity_types: [target, force]
+  required_fields: [entities]
+  examples_he:
+    - "איבדנו קשר עם מטרה אלפא, נכנסה למבנה."
+    - "אין קשר עם היחידה המתקדמת כבר שתי דקות."
+
+- id: mission_change
+  label_he: "שינוי משימה"
+  description_he: >
+    עדכון מטרת המשימה, שינוי גזרה, או הוראת מעבר למשימה אחרת.
+  applicable_entity_types: [area, force, target]
+  required_fields: [new_info]
+  examples_he:
+    - "מעבר למשימת מעקב בגזרה המזרחית, לפי הוראת המפקדה."
+    - "המשימה הנוכחית הושלמה, עוברים לסיור שגרתי."
+
+- id: malfunction
+  label_he: "תקלה"
+  description_he: >
+    תקלה טכנית בכלי הטיס, בחיישן, בקישור התקשורת או בציוד הייעודי.
+  applicable_entity_types: [force]
+  required_fields: [entities, new_info]
+  examples_he:
+    - "יש לנו תקלה במצלמה האלקטרו-אופטית, עוברים לחיישן חילופי."
+    - "ירידה חדה בקישור הנתונים, בודקים אנטנה."

@@ -1,0 +1,50 @@
+# סתירה ברורה: אותו משפט מקור (source_ids חופף) מיוחס לשני אירועים
+# סותרים על אותה ישות באותו רגע - זו דוגמה ל-LLMResult פגום שהאימות
+# (שלב 5) צריך לזהות ולדחות, בשונה מסתירה "לגיטימית" בין דיווחים שונים
+# על פני זמן (ראו טיסת זהב 3, m06-m08).
+
+case_id: same-sentence-two-contradicting-events
+description_he: >
+  מודל ה-LLM הפיק משני אירועים מאותו חלון שמצביעים על אותו משפט מקור
+  יחיד, וטוענים שני דברים סותרים על אותה ישות באותו רגע: "קשר קיים"
+  ו-"קשר אבד". פלט כזה חייב להידחה - משפט אחד לא יכול להפיק שתי טענות
+  סותרות בו-זמנית על אותה ישות.
+
+source_message:
+  id: flight-edge-04-m01
+  flight_id: flight-edge-04
+  timestamp: "2026-09-07T14:00:00Z"
+  ingested_at: "2026-09-07T14:00:00Z"
+  source: operator
+  channel: command
+  text: "בקרה, מטרה דלתא."
+
+llm_result:
+  window_id: flight-edge-04-w01
+  llm_model: test-fixture
+  events:
+    - type: contact_with_target
+      description: "קשר עם מטרה דלתא"
+      entities:
+        - id: null
+          type: target
+          label: "מטרה דלתא"
+      new_info: "קשר קיים עם מטרה דלתא."
+      relation_to_previous: new
+      confidence: 0.6
+      source_ids: [flight-edge-04-m01]
+    - type: loss_of_contact
+      description: "אובדן קשר עם מטרה דלתא"
+      entities:
+        - id: null
+          type: target
+          label: "מטרה דלתא"
+      new_info: "אין קשר עם מטרה דלתא."
+      relation_to_previous: new
+      confidence: 0.6
+      source_ids: [flight-edge-04-m01]
+
+expected:
+  validator_outcome: reject
+  reason: contradicting_events_same_source_sentence
+  rejected_event_count: 2

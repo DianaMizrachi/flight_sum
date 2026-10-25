@@ -1,0 +1,283 @@
+# טיסת זהב 2 - תרחיש הליבה שמוזכר בתכנית במפורש: אובדן קשר עם מטרה וחידושו
+# (ראו שלב 6, בדיקות: "תרחיש מטרה A ... גם כשהשניים באותו חלון").
+# המשפטים m04 ו-m05 במכוון קרובים בזמן (25 שניות) כך שיוכלו להיכנס לאותו
+# חלון בשלב 3, ובודקים שמנהל המצב (שלב 6) מעבד את שניהם לפי סדר המשפטים.
+#
+# אותה מוסכמת מזהה אירוע כמו בטיסה 1: "<flight_id>-evt-<message_id>".
+
+flight_id: flight-02
+title_he: "אובדן קשר עם מטרה בטא וחידושו"
+description_he: >
+  קשר עם מטרה נוצר, נאבד לזמן קצר ואז מתחדש - שני האירועים צריכים להישאר
+  בהיסטוריה, והמצב הסופי משקף את המצב האחרון (קשר קיים) עד לסגירה בהמשך.
+flight_end_signal_message_id: flight-02-m12
+
+messages:
+  - id: flight-02-m01
+    flight_id: flight-02
+    timestamp: "2026-09-02T09:00:00Z"
+    ingested_at: "2026-09-02T09:00:00Z"
+    source: ops
+    channel: command
+    text: "נץ שתיים, בקרה, מצב?"
+    expected:
+      has_event: false
+
+  - id: flight-02-m02
+    flight_id: flight-02
+    timestamp: "2026-09-02T09:00:10Z"
+    ingested_at: "2026-09-02T09:00:10Z"
+    source: operator
+    channel: command
+    text: "בקרה, נץ שתיים, קשר עם מטרה בטא יציב, טווח שלושה קילומטר."
+    expected:
+      has_event: true
+      event_type: contact_with_target
+      relation_to_previous: new
+      entities:
+        - id: null
+          type: target
+          label: "מטרה בטא"
+      new_info: "קשר יציב עם מטרה בטא, טווח 3 ק\"מ."
+      confidence_min: 0.8
+
+  - id: flight-02-m03
+    flight_id: flight-02
+    timestamp: "2026-09-02T09:02:00Z"
+    ingested_at: "2026-09-02T09:02:00Z"
+    source: ops
+    channel: command
+    text: "מאשר, המשך מעקב."
+    expected:
+      has_event: false
+
+  - id: flight-02-m04
+    flight_id: flight-02
+    timestamp: "2026-09-02T09:04:15Z"
+    ingested_at: "2026-09-02T09:04:15Z"
+    source: operator
+    channel: command
+    text: "בקרה, איבדנו קשר עם מטרה בטא, נכנסה לאזור עמוס מבנים."
+    expected:
+      has_event: true
+      event_type: loss_of_contact
+      relation_to_previous: updates
+      entities:
+        - id: "target-beta"
+          type: target
+          label: "מטרה בטא"
+      new_info: "קשר עם מטרה בטא אבד, נכנסה לאזור עמוס מבנים."
+      confidence_min: 0.8
+
+  - id: flight-02-m05
+    flight_id: flight-02
+    timestamp: "2026-09-02T09:04:40Z"
+    ingested_at: "2026-09-02T09:04:40Z"
+    source: operator
+    channel: command
+    text: "בקרה, חידשנו קשר עם מטרה בטא, יצאה מהמבנה, טווח קילומטר וחצי."
+    expected:
+      has_event: true
+      event_type: contact_with_target
+      relation_to_previous: updates
+      entities:
+        - id: "target-beta"
+          type: target
+          label: "מטרה בטא"
+      new_info: "קשר עם מטרה בטא חודש, טווח 1.5 ק\"מ."
+      confidence_min: 0.8
+
+  - id: flight-02-m06
+    flight_id: flight-02
+    timestamp: "2026-09-02T09:05:00Z"
+    ingested_at: "2026-09-02T09:05:00Z"
+    source: ops
+    channel: command
+    text: "מאשר, נץ שתיים, רישום - קשר עם מטרה בטא חודש."
+    expected:
+      has_event: false
+
+  - id: flight-02-m07
+    flight_id: flight-02
+    timestamp: "2026-09-02T09:12:00Z"
+    ingested_at: "2026-09-02T09:12:00Z"
+    source: operator
+    channel: command
+    text: "בקרה, מטרה בטא נכנסת לרכב, מתחילה בנסיעה לכיוון דרום."
+    expected:
+      has_event: true
+      event_type: contact_with_target
+      relation_to_previous: updates
+      entities:
+        - id: "target-beta"
+          type: target
+          label: "מטרה בטא"
+      new_info: "מטרה בטא נכנסה לרכב, נוסעת דרומה."
+      confidence_min: 0.7
+
+  - id: flight-02-m08
+    flight_id: flight-02
+    timestamp: "2026-09-02T09:20:00Z"
+    ingested_at: "2026-09-02T09:20:00Z"
+    source: operator
+    channel: command
+    text: "בקרה, מטרה בטא יצאה מטווח הזיהוי, מפסיקים מעקב."
+    expected:
+      has_event: true
+      event_type: contact_with_target
+      relation_to_previous: closes
+      entities:
+        - id: "target-beta"
+          type: target
+          label: "מטרה בטא"
+      new_info: "מטרה בטא יצאה מטווח הזיהוי, המעקב נסגר."
+      confidence_min: 0.75
+
+  - id: flight-02-m09
+    flight_id: flight-02
+    timestamp: "2026-09-02T09:21:00Z"
+    ingested_at: "2026-09-02T09:21:00Z"
+    source: ops
+    channel: command
+    text: "מאשר, נץ שתיים, המשך סיור."
+    expected:
+      has_event: false
+
+  - id: flight-02-m10
+    flight_id: flight-02
+    timestamp: "2026-09-02T09:35:00Z"
+    ingested_at: "2026-09-02T09:35:00Z"
+    source: operator
+    channel: command
+    text: "בקרה, נץ שתיים, הכל תקין, ללא ממצאים."
+    expected:
+      has_event: false
+
+  - id: flight-02-m11
+    flight_id: flight-02
+    timestamp: "2026-09-02T09:50:00Z"
+    ingested_at: "2026-09-02T09:50:00Z"
+    source: operator
+    channel: command
+    text: "בקרה, נץ שתיים, מתחילים דרך חזרה למסד, דלק שלושים וחמישה אחוז."
+    expected:
+      has_event: true
+      event_type: mission_change
+      relation_to_previous: new
+      entities:
+        - id: null
+          type: force
+          label: "נץ שתיים"
+      new_info: "דלק 35%, תחילת דרך חזרה למסד."
+      confidence_min: 0.7
+
+  - id: flight-02-m12
+    flight_id: flight-02
+    timestamp: "2026-09-02T10:05:00Z"
+    ingested_at: "2026-09-02T10:05:00Z"
+    source: operator
+    channel: command
+    text: "בקרה, נץ שתיים, נחתנו בשלום, סוף טיסה."
+    expected:
+      has_event: false
+
+checkpoints:
+  - label: "אחרי יצירת קשר ראשונית עם מטרה בטא"
+    at_message_id: flight-02-m02
+    timestamp: "2026-09-02T09:00:10Z"
+    state:
+      entities:
+        target-beta:
+          id: target-beta
+          type: target
+          label: "מטרה בטא"
+          status: active
+          attributes:
+            contact_status:
+              current:
+                value: "בקשר"
+                source_event_id: "flight-02-evt-flight-02-m02"
+                certainty: reported
+                updated_at: "2026-09-02T09:00:10Z"
+
+  - label: "אחרי אובדן קשר"
+    at_message_id: flight-02-m04
+    timestamp: "2026-09-02T09:04:15Z"
+    state:
+      entities:
+        target-beta:
+          id: target-beta
+          type: target
+          label: "מטרה בטא"
+          status: active
+          attributes:
+            contact_status:
+              current:
+                value: "אין קשר"
+                source_event_id: "flight-02-evt-flight-02-m04"
+                certainty: reported
+                updated_at: "2026-09-02T09:04:15Z"
+              history:
+                - value: "בקשר"
+                  source_event_id: "flight-02-evt-flight-02-m02"
+                  certainty: reported
+                  updated_at: "2026-09-02T09:00:10Z"
+
+  - label: "אחרי חידוש הקשר - שני האירועים נשארים בהיסטוריה"
+    at_message_id: flight-02-m05
+    timestamp: "2026-09-02T09:04:40Z"
+    state:
+      entities:
+        target-beta:
+          id: target-beta
+          type: target
+          label: "מטרה בטא"
+          status: active
+          attributes:
+            contact_status:
+              current:
+                value: "בקשר"
+                source_event_id: "flight-02-evt-flight-02-m05"
+                certainty: reported
+                updated_at: "2026-09-02T09:04:40Z"
+              history:
+                - value: "בקשר"
+                  source_event_id: "flight-02-evt-flight-02-m02"
+                  certainty: reported
+                  updated_at: "2026-09-02T09:00:10Z"
+                - value: "אין קשר"
+                  source_event_id: "flight-02-evt-flight-02-m04"
+                  certainty: reported
+                  updated_at: "2026-09-02T09:04:15Z"
+
+  - label: "מצב סופי בסוף הטיסה"
+    at_message_id: flight-02-m12
+    timestamp: "2026-09-02T10:05:00Z"
+    state:
+      entities:
+        target-beta:
+          id: target-beta
+          type: target
+          label: "מטרה בטא"
+          status: closed
+          closed_at: "2026-09-02T09:20:00Z"
+          closed_by_event_id: "flight-02-evt-flight-02-m08"
+          attributes:
+            contact_status:
+              current:
+                value: "יצאה מטווח הזיהוי"
+                source_event_id: "flight-02-evt-flight-02-m08"
+                certainty: reported
+                updated_at: "2026-09-02T09:20:00Z"
+        force-netz2:
+          id: force-netz2
+          type: force
+          label: "נץ שתיים"
+          status: active
+          attributes:
+            fuel_status:
+              current:
+                value: "35%, בדרך חזרה למסד"
+                source_event_id: "flight-02-evt-flight-02-m11"
+                certainty: reported
+                updated_at: "2026-09-02T09:50:00Z"

@@ -1,0 +1,67 @@
+# תרחישי כפילות לשלב 1 (קליטה): זיהוי לפי מזהה, ופולבק ל-hash כשאין מזהה.
+# raw_inputs מדמה את מה שמגיע לנקודת הקליטה, לפני נרמול ובניית Message מלא.
+
+cases:
+  - case_id: duplicate-exact-id
+    description_he: "אותה הודעה, עם אותו מזהה, נשלחת פעמיים (למשל retry של המקור)."
+    raw_inputs:
+      - id: flight-edge-01-m01
+        flight_id: flight-edge-01
+        timestamp: "2026-09-04T08:00:00Z"
+        source: operator
+        channel: command
+        text: "בקרה, נץ חמש, הכל תקין."
+      - id: flight-edge-01-m01
+        flight_id: flight-edge-01
+        timestamp: "2026-09-04T08:00:00Z"
+        source: operator
+        channel: command
+        text: "בקרה, נץ חמש, הכל תקין."
+    expected:
+      accepted_count: 1
+      duplicate_count: 1
+      dead_letter_count: 0
+      dedup_strategy: by_id
+
+  - case_id: duplicate-missing-id-same-hash
+    description_he: >
+      אין מזהה מהמקור בשתי ההודעות - הזיהוי חייב להתבסס על hash של
+      מקור+זמן+טקסט, ולא לקבל את שתיהן כהודעות נפרדות.
+    raw_inputs:
+      - id: null
+        flight_id: flight-edge-01
+        timestamp: "2026-09-04T08:05:00Z"
+        source: operator
+        channel: command
+        text: "בקרה, נץ חמש, ממשיכים בסיור."
+      - id: null
+        flight_id: flight-edge-01
+        timestamp: "2026-09-04T08:05:00Z"
+        source: operator
+        channel: command
+        text: "בקרה, נץ חמש, ממשיכים בסיור."
+    expected:
+      accepted_count: 1
+      duplicate_count: 1
+      dead_letter_count: 0
+      dedup_strategy: by_hash
+
+  - case_id: not-a-duplicate-different-text
+    description_he: "שתי הודעות קרובות בזמן מאותו מקור אך בתוכן שונה - לא כפילות."
+    raw_inputs:
+      - id: flight-edge-01-m02
+        flight_id: flight-edge-01
+        timestamp: "2026-09-04T08:10:00Z"
+        source: operator
+        channel: command
+        text: "בקרה, נץ חמש, מתחילים ירידה."
+      - id: flight-edge-01-m03
+        flight_id: flight-edge-01
+        timestamp: "2026-09-04T08:10:05Z"
+        source: operator
+        channel: command
+        text: "בקרה, נץ חמש, גובה שלוש מאות מטר."
+    expected:
+      accepted_count: 2
+      duplicate_count: 0
+      dead_letter_count: 0

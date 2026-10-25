@@ -1,0 +1,261 @@
+# טיסת זהב 1 - סיור זיהוי שגרתי בגזרה הצפונית.
+# מסלול "נקי": יצירת קשר עם מטרה, מעקב, סגירה, ואירוע שינוי משימה (חזרה למסד) ללא תקלות.
+#
+# מוסכמה לצורך הפיקסצ'ר בלבד (שלב 0 - לפני שמנהל המצב קיים):
+# מזהה האירוע הצפוי לכל משפט שמסומן has_event הוא "<flight_id>-evt-<message_id>",
+# ו-source_event_id בתוך checkpoints.state מניח את אותה מוסכמה.
+
+flight_id: flight-01
+title_he: "סיור זיהוי בגזרה הצפונית"
+description_he: >
+  סיור שגרתי, קשר עין עם מטרה אחת שנסגר בלי ממצא, וסיום הסיור בחזרה למסד.
+flight_end_signal_message_id: flight-01-m14
+
+messages:
+  - id: flight-01-m01
+    flight_id: flight-01
+    timestamp: "2026-09-01T06:00:00Z"
+    ingested_at: "2026-09-01T06:00:00Z"
+    source: ops
+    channel: command
+    text: "נץ אחת, בקרה, דווח מצב."
+    expected:
+      has_event: false
+
+  - id: flight-01-m02
+    flight_id: flight-01
+    timestamp: "2026-09-01T06:00:08Z"
+    ingested_at: "2026-09-01T06:00:08Z"
+    source: operator
+    channel: command
+    text: "בקרה, נץ אחת, בדרך לגזרת סיור צפון, הכל תקין."
+    expected:
+      has_event: false
+
+  - id: flight-01-m03
+    flight_id: flight-01
+    timestamp: "2026-09-01T06:05:00Z"
+    ingested_at: "2026-09-01T06:05:00Z"
+    source: operator
+    channel: command
+    text: "בקרה, נץ אחת, מתחילים סריקה בגזרה הצפונית."
+    expected:
+      has_event: false
+
+  - id: flight-01-m04
+    flight_id: flight-01
+    timestamp: "2026-09-01T06:07:30Z"
+    ingested_at: "2026-09-01T06:07:30Z"
+    source: operator
+    channel: command
+    text: "בקרה, יש לנו קשר עין עם רכב חשוד בצומת הצפוני, מגדירים אותו מטרה אלפא."
+    expected:
+      has_event: true
+      event_type: contact_with_target
+      relation_to_previous: new
+      entities:
+        - id: null
+          type: target
+          label: "מטרה אלפא"
+      new_info: "קשר עין עם רכב חשוד בצומת הצפוני, הוגדר מטרה אלפא."
+      confidence_min: 0.8
+
+  - id: flight-01-m05
+    flight_id: flight-01
+    timestamp: "2026-09-01T06:07:45Z"
+    ingested_at: "2026-09-01T06:07:45Z"
+    source: ops
+    channel: command
+    text: "מאשר, המשך מעקב אחר מטרה אלפא."
+    expected:
+      has_event: false
+
+  - id: flight-01-m06
+    flight_id: flight-01
+    timestamp: "2026-09-01T06:10:12Z"
+    ingested_at: "2026-09-01T06:10:12Z"
+    source: operator
+    channel: command
+    text: "בקרה, מטרה אלפא ממשיכה בנסיעה לכיוון מזרח, טווח יורד לשני קילומטר."
+    expected:
+      has_event: true
+      event_type: contact_with_target
+      relation_to_previous: updates
+      entities:
+        - id: "target-alpha"
+          type: target
+          label: "מטרה אלפא"
+      new_info: "מטרה אלפא נוסעת מזרחה, טווח 2 ק\"מ."
+      confidence_min: 0.7
+
+  - id: flight-01-m07
+    flight_id: flight-01
+    timestamp: "2026-09-01T06:15:40Z"
+    ingested_at: "2026-09-01T06:15:40Z"
+    source: operator
+    channel: command
+    text: "בקרה, מטרה אלפא נכנסה לאזור מבונה, קשר עין נשמר."
+    expected:
+      has_event: false
+
+  - id: flight-01-m08
+    flight_id: flight-01
+    timestamp: "2026-09-01T06:20:05Z"
+    ingested_at: "2026-09-01T06:20:05Z"
+    source: operator
+    channel: command
+    text: "בקרה, סיימנו מעקב אחרי מטרה אלפא, אין חשד נוסף, חוזרים למסלול סיור."
+    expected:
+      has_event: true
+      event_type: contact_with_target
+      relation_to_previous: closes
+      entities:
+        - id: "target-alpha"
+          type: target
+          label: "מטרה אלפא"
+      new_info: "מעקב אחרי מטרה אלפא הסתיים, אין חשד, הישות נסגרת."
+      confidence_min: 0.75
+
+  - id: flight-01-m09
+    flight_id: flight-01
+    timestamp: "2026-09-01T06:25:00Z"
+    ingested_at: "2026-09-01T06:25:00Z"
+    source: ops
+    channel: command
+    text: "מאשר, נץ אחת, המשך סיור בגזרה הצפונית."
+    expected:
+      has_event: false
+
+  - id: flight-01-m10
+    flight_id: flight-01
+    timestamp: "2026-09-01T06:40:00Z"
+    ingested_at: "2026-09-01T06:40:00Z"
+    source: operator
+    channel: command
+    text: "בקרה, נץ אחת, סיור תקין, אין ממצאים נוספים."
+    expected:
+      has_event: false
+
+  - id: flight-01-m11
+    flight_id: flight-01
+    timestamp: "2026-09-01T06:55:00Z"
+    ingested_at: "2026-09-01T06:55:00Z"
+    source: operator
+    channel: command
+    text: "בקרה, נץ אחת, דלק בארבעים אחוז, מתחילים דרך חזרה למסד."
+    expected:
+      has_event: true
+      event_type: mission_change
+      relation_to_previous: new
+      entities:
+        - id: null
+          type: force
+          label: "נץ אחת"
+      new_info: "דלק 40%, תחילת דרך חזרה למסד."
+      confidence_min: 0.7
+
+  - id: flight-01-m12
+    flight_id: flight-01
+    timestamp: "2026-09-01T07:10:00Z"
+    ingested_at: "2026-09-01T07:10:00Z"
+    source: operator
+    channel: command
+    text: "בקרה, נץ אחת, מתקרבים למסד, מבקשים אישור נחיתה."
+    expected:
+      has_event: false
+
+  - id: flight-01-m13
+    flight_id: flight-01
+    timestamp: "2026-09-01T07:15:00Z"
+    ingested_at: "2026-09-01T07:15:00Z"
+    source: ops
+    channel: command
+    text: "מאשר נחיתה, נץ אחת."
+    expected:
+      has_event: false
+
+  - id: flight-01-m14
+    flight_id: flight-01
+    timestamp: "2026-09-01T07:16:00Z"
+    ingested_at: "2026-09-01T07:16:00Z"
+    source: operator
+    channel: command
+    text: "בקרה, נץ אחת, נחתנו בשלום, סוף טיסה."
+    expected:
+      has_event: false
+
+checkpoints:
+  - label: "אחרי יצירת קשר עם מטרה אלפא"
+    at_message_id: flight-01-m04
+    timestamp: "2026-09-01T06:07:30Z"
+    state:
+      entities:
+        target-alpha:
+          id: target-alpha
+          type: target
+          label: "מטרה אלפא"
+          status: active
+          attributes:
+            location:
+              current:
+                value: "צומת צפוני"
+                source_event_id: "flight-01-evt-flight-01-m04"
+                certainty: reported
+                updated_at: "2026-09-01T06:07:30Z"
+
+  - label: "אחרי סגירת מעקב מטרה אלפא"
+    at_message_id: flight-01-m08
+    timestamp: "2026-09-01T06:20:05Z"
+    state:
+      entities:
+        target-alpha:
+          id: target-alpha
+          type: target
+          label: "מטרה אלפא"
+          status: closed
+          closed_at: "2026-09-01T06:20:05Z"
+          closed_by_event_id: "flight-01-evt-flight-01-m08"
+          attributes:
+            location:
+              current:
+                value: "אזור מבונה, צומת צפוני"
+                source_event_id: "flight-01-evt-flight-01-m06"
+                certainty: reported
+                updated_at: "2026-09-01T06:10:12Z"
+              history:
+                - value: "צומת צפוני"
+                  source_event_id: "flight-01-evt-flight-01-m04"
+                  certainty: reported
+                  updated_at: "2026-09-01T06:07:30Z"
+
+  - label: "מצב סופי בסוף הטיסה"
+    at_message_id: flight-01-m14
+    timestamp: "2026-09-01T07:16:00Z"
+    state:
+      entities:
+        target-alpha:
+          id: target-alpha
+          type: target
+          label: "מטרה אלפא"
+          status: closed
+          closed_at: "2026-09-01T06:20:05Z"
+          closed_by_event_id: "flight-01-evt-flight-01-m08"
+          attributes:
+            location:
+              current:
+                value: "אזור מבונה, צומת צפוני"
+                source_event_id: "flight-01-evt-flight-01-m06"
+                certainty: reported
+                updated_at: "2026-09-01T06:10:12Z"
+        force-netz1:
+          id: force-netz1
+          type: force
+          label: "נץ אחת"
+          status: active
+          attributes:
+            fuel_status:
+              current:
+                value: "40%, בדרך חזרה למסד"
+                source_event_id: "flight-01-evt-flight-01-m11"
+                certainty: reported
+                updated_at: "2026-09-01T06:55:00Z"

@@ -1,0 +1,688 @@
+openapi: 3.1.0
+info:
+  title: aura API
+  summary: קליטת תמלול טיסה, זיהוי אירועים וסיכום - ממשק HTTP
+  description: '
+
+    ממשק ה-HTTP של aura - קליטת משפטי תמלול, זיהוי אירועים וסיכום טיסה.
+
+    מימוש לפי `flight-transcript-work-plan.md`.
+
+
+    **מה שמומש עד כה:** שלב 0 (חוזים, טקסונומיה, סט זהב), שלב 1 - רכיב 1,
+
+    קליטת משפטים: נרמול, זיהוי כפילויות, dead-letter ותור פנימי, ושלב 2 -
+
+    רכיב 2, מאגר התמלול הגולמי: append-only, ושליפה לפי מזהה, טיסה וטווח זמן.
+
+
+    **מה שעוד לא:** שאילתות התחקור (ציר זמן, מצב משימה, סיכום טיסה, מאירוע
+
+    לתמלול המקורי, ובחירה בין גרסת זמן אמת לגרסה סופית) נוספות כאן בשלב 10,
+
+    מעל שירות השאילתות של שלב 9.
+
+
+    ### התנהגות הקליטה
+
+
+    | תוצאה | קוד | מתי |
+
+    | --- | --- | --- |
+
+    | `accepted` | 201 | ההודעה נקלטה, נורמלה והועברה לתור |
+
+    | `duplicate` | 200 | אותה הודעה נקלטה כבר - מסומנת, לא נכנסת לתור שוב |
+
+    | `dead_letter` | 422 | הודעה פגומה; נרשמה עם סיבה וניתן לשלוף אותה ב-`/dead-letters` |
+
+
+    הולידציה התוכנית נעשית ברכיב הקליטה ולא בשכבת ה-HTTP, כדי שכל הודעה
+
+    פגומה תגיע ל-dead-letter עם סיבה ולא תיעלם בשגיאת תחבורה.
+
+    '
+  version: 0.1.0
+paths:
+  /messages:
+    post:
+      tags:
+      - ingestion
+      summary: קליטת משפט תמלול בודד
+      description: 'קליטת משפט אחד: נרמול (UTC, רווחים, תווי כיווניות), זיהוי כפילות
+
+        לפי מזהה המקור או לפי hash, והעברה לתור הפנימי.'
+      operationId: ingest_message_messages_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IngestRequest'
+        required: true
+      responses:
+        '201':
+          description: ההודעה נקלטה, נורמלה והועברה לתור הפנימי
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngestResult'
+        '200':
+          description: כפילות - ההודעה כבר נקלטה ומסומנת; לא הועברה לתור שוב
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngestResult'
+        '422':
+          description: ההודעה נרשמה ל-dead-letter עם סיבה; ראו שדה dead_letter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngestResult'
+  /messages/batch:
+    post:
+      tags:
+      - ingestion
+      summary: קליטת רצף משפטים
+      description: 'קליטת כמה הודעות בקריאה אחת, בסדר שבו נשלחו. תוצאות מעורבות הן
+
+        מצב תקין: הקוד תמיד 200, והסטטוס נמצא בכל תוצאה בנפרד.'
+      operationId: ingest_batch_messages_batch_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BatchIngestRequest'
+        required: true
+      responses:
+        '200':
+          description: סיכום לפי סטטוס ותוצאה מלאה לכל הודעה
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchIngestResponse'
+        '422':
+          description: Unprocessable Entity
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /flights:
+    get:
+      tags:
+      - transcript
+      summary: הטיסות שיש להן תמלול שמור
+      operationId: list_flights_flights_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                items:
+                  type: string
+                type: array
+                title: Response List Flights Flights Get
+  /flights/{flight_id}/messages:
+    get:
+      tags:
+      - transcript
+      summary: תמלול טיסה, בסדר כרונולוגי
+      description: 'שליפה לפי טיסה, ולפי טווח זמן בתוכה.
+
+
+        הסינון הוא על ``timestamp`` - החותמת המקורית מהמקור - ולכן הודעה
+
+        שהגיעה באיחור נשלפת בטווח שבו נאמרה, לא בזה שבו נקלטה.'
+      operationId: get_flight_transcript_flights__flight_id__messages_get
+      parameters:
+      - name: flight_id
+        in: path
+        required: true
+        schema:
+          type: string
+          description: מזהה הטיסה
+          title: Flight Id
+        description: מזהה הטיסה
+      - name: start
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          description: תחילת טווח, ISO-8601 (כולל)
+          title: Start
+        description: תחילת טווח, ISO-8601 (כולל)
+      - name: end
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          description: סוף טווח, ISO-8601 (כולל)
+          title: End
+        description: סוף טווח, ISO-8601 (כולל)
+      - name: limit
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+            maximum: 10000
+            minimum: 1
+          - type: 'null'
+          title: Limit
+      responses:
+        '200':
+          description: משפטי הטיסה לפי החותמת המקורית - גם אם נקלטו שלא לפי הסדר
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Message'
+                title: Response Get Flight Transcript Flights  Flight Id  Messages Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /messages/{message_id}:
+    get:
+      tags:
+      - transcript
+      summary: משפט בודד לפי מזהה
+      description: המשפט כפי שנקלט, ללא שינוי - זו הדרך לחזור מאירוע לתמלול המקורי.
+      operationId: get_message_messages__message_id__get
+      parameters:
+      - name: message_id
+        in: path
+        required: true
+        schema:
+          type: string
+          description: מזהה ההודעה
+          title: Message Id
+        description: מזהה ההודעה
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '404':
+          description: אין הודעה כזו
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /dead-letters:
+    get:
+      tags:
+      - operations
+      summary: שליפת הודעות שנדחו
+      description: 'לוג ה-dead-letter: כל הודעה שנדחתה, עם הסיבה והמקור הגולמי שלה,
+
+        כדי שאפשר יהיה לתקן במקור ולהזרים מחדש.'
+      operationId: list_dead_letters_dead_letters_get
+      parameters:
+      - name: flight_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: סינון לטיסה אחת
+          title: Flight Id
+        description: סינון לטיסה אחת
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 1000
+          minimum: 1
+          default: 100
+          title: Limit
+      responses:
+        '200':
+          description: רשומות dead-letter, מהחדשה לישנה
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DeadLetterRecord'
+                title: Response List Dead Letters Dead Letters Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /queue:
+    get:
+      tags:
+      - operations
+      summary: מצב התור הפנימי
+      operationId: queue_status_queue_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QueueStatus'
+  /health:
+    get:
+      tags:
+      - operations
+      summary: בריאות השירות
+      operationId: health_health_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+components:
+  schemas:
+    BatchIngestRequest:
+      properties:
+        messages:
+          items:
+            $ref: '#/components/schemas/IngestRequest'
+          type: array
+          maxItems: 1000
+          minItems: 1
+          title: Messages
+      additionalProperties: false
+      type: object
+      required:
+      - messages
+      title: BatchIngestRequest
+      description: רצף הודעות, נקלטות בסדר שבו נשלחו - לא בסדר חותמות הזמן שלהן.
+    BatchIngestResponse:
+      properties:
+        accepted_count:
+          type: integer
+          title: Accepted Count
+        duplicate_count:
+          type: integer
+          title: Duplicate Count
+        dead_letter_count:
+          type: integer
+          title: Dead Letter Count
+        results:
+          items:
+            $ref: '#/components/schemas/IngestResult'
+          type: array
+          title: Results
+      additionalProperties: false
+      type: object
+      required:
+      - accepted_count
+      - duplicate_count
+      - dead_letter_count
+      - results
+      title: BatchIngestResponse
+      description: 'סיכום קליטה מרוכז: מנייה לפי סטטוס, ותוצאה מלאה לכל הודעה.'
+    DeadLetterReason:
+      type: string
+      enum:
+      - missing_required_field
+      - empty_text
+      - invalid_timestamp
+      - schema_invalid
+      title: DeadLetterReason
+      description: 'סיבות דחייה לקליטה. ארבע הראשונות הן אוצר המילים של פיקסצ''ר
+
+        ``malformed_and_empty.yaml``; השאר נחוצות לתעבורה אמיתית.'
+    DeadLetterRecord:
+      properties:
+        reason:
+          $ref: '#/components/schemas/DeadLetterReason'
+        detail:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Detail
+          description: פירוט חופשי, למשל שגיאת הסכמה
+        missing_field:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Missing Field
+          description: שם שדה החובה החסר, אם רלוונטי
+        flight_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Flight Id
+        message_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Message Id
+        raw_payload:
+          additionalProperties: true
+          type: object
+          title: Raw Payload
+        recorded_at:
+          type: string
+          format: date-time
+          title: Recorded At
+      additionalProperties: false
+      type: object
+      required:
+      - reason
+      - raw_payload
+      - recorded_at
+      title: DeadLetterRecord
+      description: 'רשומת dead-letter: הודעה שלא ניתן היה לקלוט, עם הסיבה והמקור הגולמי.
+
+
+        ``raw_payload`` נשמר כפי שהגיע, לפי העיקרון "שמירה לפני עיבוד" - גם
+
+        הודעה פגומה לא נעלמת, וניתן לנסות לקלוט אותה מחדש אחרי תיקון המקור.'
+    DedupStrategy:
+      type: string
+      enum:
+      - by_id
+      - by_hash
+      title: DedupStrategy
+      description: איזה מפתח שימש לזיהוי הכפילות (מקביל ל-``dedup_strategy`` בפיקסצ'רים).
+    ErrorResponse:
+      properties:
+        detail:
+          title: Detail
+      additionalProperties: false
+      type: object
+      required:
+      - detail
+      title: ErrorResponse
+      description: 'שגיאת שכבת ה-HTTP (גוף לא תקין). דחיית הודעה *תקינה מבחינת תחבורה*
+
+        אך פגומה בתוכנה מוחזרת כ-``IngestResult`` עם ``dead_letter``, לא כאן.'
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          type: array
+          title: Detail
+      type: object
+      title: HTTPValidationError
+    HealthResponse:
+      properties:
+        status:
+          type: string
+          title: Status
+        version:
+          type: string
+          title: Version
+        implemented_stages:
+          items:
+            type: integer
+          type: array
+          title: Implemented Stages
+          description: השלבים בתכנית העבודה שממומשים בבנייה הזו
+      additionalProperties: false
+      type: object
+      required:
+      - status
+      - version
+      - implemented_stages
+      title: HealthResponse
+    IngestRequest:
+      properties:
+        id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Id
+          description: מזהה ייחודי מהמקור; בהיעדרו נגזר מ-hash
+        flight_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Flight Id
+          description: מזהה הטיסה (נדרש)
+        timestamp:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Timestamp
+          description: חותמת הזמן המקורית, ISO-8601 (נדרש). חותמת ללא אזור זמן = UTC
+        ingested_at:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Ingested At
+          description: זמן הקליטה - לשימוש בהזרמה חוזרת/השלמה בדיעבד. בתעבורה רגילה נקבע בשרת
+        source:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Source
+          description: דובר/מקור ההודעה, למשל operator (נדרש)
+        channel:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Channel
+          description: ערוץ תקשורת, אם רלוונטי
+        text:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Text
+          description: טקסט המשפט (נדרש)
+        language:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Language
+          description: קוד שפה; ברירת מחדל he
+        metadata:
+          anyOf:
+          - additionalProperties:
+              type: string
+            type: object
+          - type: 'null'
+          title: Metadata
+          description: מטא-דאטה חופשית מהמקור
+      additionalProperties: true
+      type: object
+      title: IngestRequest
+      description: 'משפט תמלול בודד כפי שהמקור שולח אותו.
+
+
+        ``flight_id``, ``timestamp``, ``source`` ו-``text`` נדרשים בפועל; הם
+
+        מוגדרים כאופציונליים כדי שהודעה חסרה תגיע ל-dead-letter עם סיבה
+
+        במקום להידחות בשכבת ה-HTTP. שדות שאינם מוכרים נשמרים ונרשמים
+
+        ב-``metadata["unmapped_fields"]``.'
+      examples:
+      - channel: command
+        flight_id: flight-01
+        id: flight-01-m04
+        source: operator
+        text: בקרה, נץ אחת, קשר עין עם רכב בודד בציר המזרחי.
+        timestamp: '2026-09-01T06:12:00Z'
+      - flight_id: flight-01
+        source: operator
+        text: בקרה, נץ אחת, ממשיכים מעקב.
+        timestamp: '2026-09-01T06:12:30Z'
+    IngestResult:
+      properties:
+        status:
+          $ref: '#/components/schemas/MessageStatus'
+        message:
+          anyOf:
+          - $ref: '#/components/schemas/Message'
+          - type: 'null'
+          description: ה-Message שנבנה; קיים גם לכפילות, מסומן כ-duplicate
+        dead_letter:
+          anyOf:
+          - $ref: '#/components/schemas/DeadLetterRecord'
+          - type: 'null'
+        dedup_strategy:
+          anyOf:
+          - $ref: '#/components/schemas/DedupStrategy'
+          - type: 'null'
+          description: המפתח שלפיו נבדקה הכפילות - גם כשההודעה נקלטה
+        duplicate_of:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Duplicate Of
+          description: מזהה ההודעה שנקלטה ראשונה
+        queued:
+          type: boolean
+          title: Queued
+          description: האם ההודעה הועברה לתור הפנימי
+          default: false
+      additionalProperties: false
+      type: object
+      required:
+      - status
+      title: IngestResult
+      description: 'תוצאת ניסיון קליטה אחד: נקלט / כפילות / dead-letter.'
+    Message:
+      properties:
+        id:
+          type: string
+          minLength: 1
+          title: Id
+        flight_id:
+          type: string
+          minLength: 1
+          title: Flight Id
+        timestamp:
+          type: string
+          format: date-time
+          title: Timestamp
+        ingested_at:
+          type: string
+          format: date-time
+          title: Ingested At
+        source:
+          type: string
+          minLength: 1
+          title: Source
+          description: דובר/מקור ההודעה, למשל operator, pilot, ops
+        channel:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Channel
+          description: ערוץ תקשורת, אם רלוונטי
+        text:
+          type: string
+          title: Text
+        language:
+          type: string
+          title: Language
+          default: he
+        dedup_hash:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Dedup Hash
+          description: hash של מקור+זמן+טקסט, לשימוש כשאין מזהה ייחודי מהמקור
+        status:
+          $ref: '#/components/schemas/MessageStatus'
+          default: accepted
+        dead_letter_reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Dead Letter Reason
+        metadata:
+          additionalProperties:
+            type: string
+          type: object
+          title: Metadata
+      additionalProperties: false
+      type: object
+      required:
+      - id
+      - flight_id
+      - timestamp
+      - ingested_at
+      - source
+      - text
+      title: Message
+      description: 'משפט תמלול בודד, כפי שהוא נקלט ונשמר במאגר הגולמי (רכיבים 1-2).
+
+
+        ``timestamp`` הוא חותמת הזמן המקורית מהמקור (UTC) ואינה משתנה גם אם
+
+        ההודעה מגיעה למערכת באיחור - ``ingested_at`` משמש לזיהוי איחור.'
+    MessageStatus:
+      type: string
+      enum:
+      - accepted
+      - duplicate
+      - dead_letter
+      title: MessageStatus
+    QueueStatus:
+      properties:
+        depth:
+          type: integer
+          title: Depth
+          description: מספר ההודעות שממתינות לעיבוד אסינכרוני
+      additionalProperties: false
+      type: object
+      required:
+      - depth
+      title: QueueStatus
+      description: מצב התור הפנימי. התור הוא בזיכרון עד שנכנס צורכן אמיתי (שלב 3).
+    ValidationError:
+      properties:
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          type: array
+          title: Location
+        msg:
+          type: string
+          title: Message
+        type:
+          type: string
+          title: Error Type
+        input:
+          title: Input
+        ctx:
+          type: object
+          title: Context
+      type: object
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError
+tags:
+- name: ingestion
+  description: רכיב 1 - קליטת משפטי תמלול (שלב 1).
+- name: transcript
+  description: 'רכיב 2 - שליפה מהמאגר הגולמי (שלב 2). append-only: אין עדכון ואין מחיקה.'
+- name: operations
+  description: בריאות השירות, התור הפנימי ולוג ה-dead-letter.

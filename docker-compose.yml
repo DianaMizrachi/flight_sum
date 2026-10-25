@@ -1,0 +1,54 @@
+# סביבת הרצה מקומית לשלב 0 (שלב 0, משימה 6): מסד נתונים, תור, ומודל LLM
+# מקומי. כל הרכיבים עצמם (קליטה, בניית הקשר וכו') עדיין לא רצים כשירותים
+# נפרדים - הם מתחברים לתשתית הזו משלב 1 ואילך.
+#
+# הרצת מודל מקומי (ollama) דורשת nvidia-container-toolkit על המארח כדי
+# שה-GPU יהיה חשוף לקונטיינר. אחרי `docker compose up -d ollama`:
+#   docker compose exec ollama ollama pull qwen2.5:14b-instruct-q4_K_M
+# (מודל התחלתי מועמד - להחליף בקלות דרך שכבת הלקוח המופשטת של רכיב 4
+# אם מודל ממוקד-עברית, כמו DictaLM, ייתן תוצאות טובות יותר בהערכה).
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: aura
+      POSTGRES_USER: aura
+      POSTGRES_PASSWORD: aura
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aura"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: ["gpu"]
+
+volumes:
+  postgres-data:
+  ollama-data:

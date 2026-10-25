@@ -1,0 +1,321 @@
+# טיסת זהב 3 - תקלה טכנית, סתירה בין שני דיווחים על אותה מטרה ופתרונה,
+# ומעבר אחריות גזרה לכוח אחר (שינוי משימה).
+# מכוון לבדוק את שלושת סוגי האירועים הנוספים בטקסונומיה (malfunction,
+# contradicts, mission_change) מעבר לתרחיש הקשר שבטיסות 1-2.
+
+flight_id: flight-03
+title_he: "תקלה טכנית וסתירה בדיווח על מטרה גמא"
+description_he: >
+  תקלת חיישן שמטופלת, שני דיווחים סותרים על תנועת מטרה גמא שמתבררים
+  ונפתרים, והעברת הגזרה לכוח אחר בעקבות התקלה.
+flight_end_signal_message_id: flight-03-m13
+
+messages:
+  - id: flight-03-m01
+    flight_id: flight-03
+    timestamp: "2026-09-03T11:00:00Z"
+    ingested_at: "2026-09-03T11:00:00Z"
+    source: ops
+    channel: command
+    text: "נץ שלוש, בקרה, דווח מצב."
+    expected:
+      has_event: false
+
+  - id: flight-03-m02
+    flight_id: flight-03
+    timestamp: "2026-09-03T11:00:12Z"
+    ingested_at: "2026-09-03T11:00:12Z"
+    source: operator
+    channel: command
+    text: "בקרה, נץ שלוש, בגזרה המזרחית, סורקים כרגיל."
+    expected:
+      has_event: false
+
+  - id: flight-03-m03
+    flight_id: flight-03
+    timestamp: "2026-09-03T11:08:00Z"
+    ingested_at: "2026-09-03T11:08:00Z"
+    source: operator
+    channel: command
+    text: "בקרה, יש לנו תקלה במצלמה האלקטרו-אופטית, איבוד חדות תמונה."
+    expected:
+      has_event: true
+      event_type: malfunction
+      relation_to_previous: new
+      entities:
+        - id: null
+          type: force
+          label: "נץ שלוש"
+      new_info: "תקלה במצלמת EO, איבוד חדות תמונה."
+      confidence_min: 0.8
+
+  - id: flight-03-m04
+    flight_id: flight-03
+    timestamp: "2026-09-03T11:08:20Z"
+    ingested_at: "2026-09-03T11:08:20Z"
+    source: ops
+    channel: command
+    text: "מאשר, נץ שלוש, עברו לחיישן חילופי."
+    expected:
+      has_event: false
+
+  - id: flight-03-m05
+    flight_id: flight-03
+    timestamp: "2026-09-03T11:09:00Z"
+    ingested_at: "2026-09-03T11:09:00Z"
+    source: operator
+    channel: command
+    text: "בקרה, עברנו לחיישן החילופי, תמונה תקינה, התקלה טופלה."
+    expected:
+      has_event: true
+      event_type: malfunction
+      relation_to_previous: updates
+      entities:
+        - id: "force-netz3"
+          type: force
+          label: "נץ שלוש"
+      new_info: "חיישן חילופי פעיל, התקלה טופלה."
+      confidence_min: 0.75
+
+  - id: flight-03-m06
+    flight_id: flight-03
+    timestamp: "2026-09-03T11:20:00Z"
+    ingested_at: "2026-09-03T11:20:00Z"
+    source: operator
+    channel: command
+    text: "בקרה, מטרה גמא מזוהה, נוסעת צפונה לכיוון הגבעה."
+    expected:
+      has_event: true
+      event_type: contact_with_target
+      relation_to_previous: new
+      entities:
+        - id: null
+          type: target
+          label: "מטרה גמא"
+      new_info: "מטרה גמא מזוהה, נוסעת צפונה."
+      confidence_min: 0.75
+
+  - id: flight-03-m07
+    flight_id: flight-03
+    timestamp: "2026-09-03T11:21:30Z"
+    ingested_at: "2026-09-03T11:21:30Z"
+    source: ops
+    channel: command
+    text: "בקרה, נץ שלוש, מהיחידה הקרקעית מדווחים שמטרה גמא עצרה ונמצאת במנוחה באזור, בדקו ועדכנו."
+    expected:
+      has_event: true
+      event_type: contact_with_target
+      relation_to_previous: contradicts
+      entities:
+        - id: "target-gamma"
+          type: target
+          label: "מטרה גמא"
+      new_info: "דיווח סותר מיחידה קרקעית: מטרה גמא עצרה ונמצאת במנוחה, לא בתנועה."
+      confidence_min: 0.5
+
+  - id: flight-03-m08
+    flight_id: flight-03
+    timestamp: "2026-09-03T11:22:10Z"
+    ingested_at: "2026-09-03T11:22:10Z"
+    source: operator
+    channel: command
+    text: "בקרה, מאשרים, מטרה גמא נייחת, לא בתנועה, מעודכן."
+    expected:
+      has_event: true
+      event_type: contact_with_target
+      relation_to_previous: updates
+      entities:
+        - id: "target-gamma"
+          type: target
+          label: "מטרה גמא"
+      new_info: "אושר חזותית: מטרה גמא נייחת, הסתירה נפתרה."
+      confidence_min: 0.8
+
+  - id: flight-03-m09
+    flight_id: flight-03
+    timestamp: "2026-09-03T11:35:00Z"
+    ingested_at: "2026-09-03T11:35:00Z"
+    source: ops
+    channel: command
+    text: "בקרה, נץ שלוש, לאור התקלה הקודמת, מעבירים את גזרת המזרח לנץ ארבע, אתם חוזרים למסד."
+    expected:
+      has_event: true
+      event_type: mission_change
+      relation_to_previous: new
+      entities:
+        - id: "force-netz3"
+          type: force
+          label: "נץ שלוש"
+      new_info: "גזרת המזרח הועברה לנץ ארבע עקב התקלה הקודמת, נץ שלוש חוזר למסד."
+      confidence_min: 0.75
+
+  - id: flight-03-m10
+    flight_id: flight-03
+    timestamp: "2026-09-03T11:35:20Z"
+    ingested_at: "2026-09-03T11:35:20Z"
+    source: operator
+    channel: command
+    text: "מאשר, בקרה, נץ שלוש מתחיל דרך חזרה."
+    expected:
+      has_event: false
+
+  - id: flight-03-m11
+    flight_id: flight-03
+    timestamp: "2026-09-03T11:50:00Z"
+    ingested_at: "2026-09-03T11:50:00Z"
+    source: operator
+    channel: command
+    text: "בקרה, נץ שלוש, מתקרבים למסד."
+    expected:
+      has_event: false
+
+  - id: flight-03-m12
+    flight_id: flight-03
+    timestamp: "2026-09-03T11:55:00Z"
+    ingested_at: "2026-09-03T11:55:00Z"
+    source: ops
+    channel: command
+    text: "מאשר נחיתה, נץ שלוש."
+    expected:
+      has_event: false
+
+  - id: flight-03-m13
+    flight_id: flight-03
+    timestamp: "2026-09-03T11:56:00Z"
+    ingested_at: "2026-09-03T11:56:00Z"
+    source: operator
+    channel: command
+    text: "בקרה, נץ שלוש, נחתנו בשלום, סוף טיסה."
+    expected:
+      has_event: false
+
+checkpoints:
+  - label: "אחרי דיווח התקלה"
+    at_message_id: flight-03-m03
+    timestamp: "2026-09-03T11:08:00Z"
+    state:
+      entities:
+        force-netz3:
+          id: force-netz3
+          type: force
+          label: "נץ שלוש"
+          status: active
+          attributes:
+            sensor_status:
+              current:
+                value: "תקלה: אובדן חדות תמונה EO"
+                source_event_id: "flight-03-evt-flight-03-m03"
+                certainty: reported
+                updated_at: "2026-09-03T11:08:00Z"
+
+  - label: "אחרי טיפול בתקלה"
+    at_message_id: flight-03-m05
+    timestamp: "2026-09-03T11:09:00Z"
+    state:
+      entities:
+        force-netz3:
+          id: force-netz3
+          type: force
+          label: "נץ שלוש"
+          status: active
+          attributes:
+            sensor_status:
+              current:
+                value: "חיישן חילופי פעיל, תקין"
+                source_event_id: "flight-03-evt-flight-03-m05"
+                certainty: reported
+                updated_at: "2026-09-03T11:09:00Z"
+              history:
+                - value: "תקלה: אובדן חדות תמונה EO"
+                  source_event_id: "flight-03-evt-flight-03-m03"
+                  certainty: reported
+                  updated_at: "2026-09-03T11:08:00Z"
+
+  - label: "אחרי הדיווח הסותר - מסומן contradicted"
+    at_message_id: flight-03-m07
+    timestamp: "2026-09-03T11:21:30Z"
+    state:
+      entities:
+        target-gamma:
+          id: target-gamma
+          type: target
+          label: "מטרה גמא"
+          status: active
+          attributes:
+            movement_status:
+              current:
+                value: "דיווח סותר: עצרה, במנוחה (לא מאושר חזותית)"
+                source_event_id: "flight-03-evt-flight-03-m07"
+                certainty: uncertain
+                updated_at: "2026-09-03T11:21:30Z"
+              history:
+                - value: "נוסעת צפונה"
+                  source_event_id: "flight-03-evt-flight-03-m06"
+                  certainty: reported
+                  updated_at: "2026-09-03T11:20:00Z"
+              contradicted: true
+
+  - label: "אחרי פתרון הסתירה"
+    at_message_id: flight-03-m08
+    timestamp: "2026-09-03T11:22:10Z"
+    state:
+      entities:
+        target-gamma:
+          id: target-gamma
+          type: target
+          label: "מטרה גמא"
+          status: active
+          attributes:
+            movement_status:
+              current:
+                value: "נייחת, לא בתנועה"
+                source_event_id: "flight-03-evt-flight-03-m08"
+                certainty: verified
+                updated_at: "2026-09-03T11:22:10Z"
+              history:
+                - value: "נוסעת צפונה"
+                  source_event_id: "flight-03-evt-flight-03-m06"
+                  certainty: reported
+                  updated_at: "2026-09-03T11:20:00Z"
+                - value: "דיווח סותר: עצרה, במנוחה (לא מאושר חזותית)"
+                  source_event_id: "flight-03-evt-flight-03-m07"
+                  certainty: uncertain
+                  updated_at: "2026-09-03T11:21:30Z"
+              contradicted: false
+
+  - label: "מצב סופי בסוף הטיסה"
+    at_message_id: flight-03-m13
+    timestamp: "2026-09-03T11:56:00Z"
+    state:
+      entities:
+        force-netz3:
+          id: force-netz3
+          type: force
+          label: "נץ שלוש"
+          status: active
+          attributes:
+            sensor_status:
+              current:
+                value: "חיישן חילופי פעיל, תקין"
+                source_event_id: "flight-03-evt-flight-03-m05"
+                certainty: reported
+                updated_at: "2026-09-03T11:09:00Z"
+            sector_assignment:
+              current:
+                value: "גזרת המזרח הועברה לנץ ארבע, חוזר למסד"
+                source_event_id: "flight-03-evt-flight-03-m09"
+                certainty: reported
+                updated_at: "2026-09-03T11:35:00Z"
+        target-gamma:
+          id: target-gamma
+          type: target
+          label: "מטרה גמא"
+          status: active
+          attributes:
+            movement_status:
+              current:
+                value: "נייחת, לא בתנועה"
+                source_event_id: "flight-03-evt-flight-03-m08"
+                certainty: verified
+                updated_at: "2026-09-03T11:22:10Z"
+              contradicted: false

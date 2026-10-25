@@ -1,0 +1,43 @@
+# הודעות שמגיעות שלא לפי הסדר (רשת/קישור תקשורת לא רציף). הסדר הכרונולוגי
+# הנכון חייב להתבסס על timestamp המקורי, לא על סדר/זמן ingested_at.
+# (שלבים 1, 3, 6 - ראו טבלת הסיכונים בתכנית.)
+
+case_id: late-arrival-out-of-order
+description_he: >
+  שלוש הודעות עם timestamp עולה, אבל ההודעה האמצעית (לפי זמן) מגיעה
+  בפועל אחרונה (ingested_at מאוחר משמעותית). הסדר הכרונולוגי הנכון
+  לשחזור ולחלונות הוא לפי timestamp: m01, m02, m03.
+
+raw_inputs:
+  - id: flight-edge-02-m01
+    flight_id: flight-edge-02
+    timestamp: "2026-09-05T10:00:00Z"
+    ingested_at: "2026-09-05T10:00:01Z"
+    source: operator
+    channel: command
+    text: "בקרה, נץ שש, מתחילים סריקה."
+
+  - id: flight-edge-02-m03
+    flight_id: flight-edge-02
+    timestamp: "2026-09-05T10:00:20Z"
+    ingested_at: "2026-09-05T10:00:21Z"
+    source: operator
+    channel: command
+    text: "בקרה, נץ שש, אין ממצאים נוספים."
+
+  - id: flight-edge-02-m02
+    flight_id: flight-edge-02
+    timestamp: "2026-09-05T10:00:10Z"
+    ingested_at: "2026-09-05T10:01:45Z"
+    source: operator
+    channel: command
+    text: "בקרה, נץ שש, קשר עין עם רכב בודד, לא חשוד."
+
+expected:
+  chronological_order_by_timestamp:
+    - flight-edge-02-m01
+    - flight-edge-02-m02
+    - flight-edge-02-m03
+  late_message_id: flight-edge-02-m02
+  late_by_seconds: 95
+  must_not_overwrite_newer_state: true

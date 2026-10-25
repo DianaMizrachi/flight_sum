@@ -1,0 +1,68 @@
+# הודעות לא תקינות: שדה חובה חסר, או משפט ריק/משובש.
+# כולן צריכות להגיע ל-dead-letter עם סיבה, ולא להיבלע (שלב 1).
+
+cases:
+  - case_id: missing-text
+    description_he: "שדה הטקסט חסר כליל."
+    raw_input:
+      id: flight-edge-03-m01
+      flight_id: flight-edge-03
+      timestamp: "2026-09-06T12:00:00Z"
+      source: operator
+      channel: command
+    expected:
+      dead_letter: true
+      reason: missing_required_field
+      missing_field: text
+
+  - case_id: empty-text
+    description_he: "הטקסט קיים אך ריק (מחרוזת ריקה)."
+    raw_input:
+      id: flight-edge-03-m02
+      flight_id: flight-edge-03
+      timestamp: "2026-09-06T12:00:05Z"
+      source: operator
+      channel: command
+      text: ""
+    expected:
+      dead_letter: true
+      reason: empty_text
+
+  - case_id: whitespace-only-text
+    description_he: "הטקסט מכיל רק רווחים/תווי בקרה - תוצר תמלול משובש."
+    raw_input:
+      id: flight-edge-03-m03
+      flight_id: flight-edge-03
+      timestamp: "2026-09-06T12:00:10Z"
+      source: operator
+      channel: command
+      text: "   \t  "
+    expected:
+      dead_letter: true
+      reason: empty_text
+
+  - case_id: missing-timestamp
+    description_he: "אין חותמת זמן מהמקור."
+    raw_input:
+      id: flight-edge-03-m04
+      flight_id: flight-edge-03
+      source: operator
+      channel: command
+      text: "בקרה, נץ שבע, מצב תקין."
+    expected:
+      dead_letter: true
+      reason: missing_required_field
+      missing_field: timestamp
+
+  - case_id: missing-flight-id
+    description_he: "אין מזהה טיסה - לא ניתן לשייך את ההודעה לאף טיסה."
+    raw_input:
+      id: flight-edge-03-m05
+      timestamp: "2026-09-06T12:00:15Z"
+      source: operator
+      channel: command
+      text: "בקרה, נץ שבע, מצב תקין."
+    expected:
+      dead_letter: true
+      reason: missing_required_field
+      missing_field: flight_id
