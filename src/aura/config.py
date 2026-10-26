@@ -14,9 +14,29 @@ class WindowConfig(BaseModel):
     silence_threshold_seconds: int = Field(
         default=20, description="PLACEHOLDER - not specified in the plan, pending approval"
     )
-    max_duration_seconds: int = Field(default=90, description="PLAN DEFAULT")
-    max_sentences: int = Field(default=15, description="PLAN DEFAULT")
+    max_duration_seconds: int = Field(
+        default=90, description="PLAN DEFAULT; measured over the window's own sentences"
+    )
+    max_sentences: int = Field(
+        default=15, description="PLAN DEFAULT; counts the overlap too, since the LLM sees it"
+    )
     overlap_sentences: int = Field(default=2, description="PLAN DEFAULT (range is 1-2)")
+    close_on_speaker_change: bool = Field(
+        default=True,
+        description=(
+            "PLAN DEFAULT. On alternating radio traffic this fragments windows to 1-2 "
+            "sentences; see README. Turn off when `source` quality is unknown."
+        ),
+    )
+    close_on_channel_change: bool = Field(default=True, description="PLAN DEFAULT")
+    include_late_messages: bool = Field(
+        default=False,
+        description=(
+            "PLACEHOLDER - not in the plan. False: a sentence that belongs to an already "
+            "closed window is reported as an orphan and left to the stage 11 reconciler. "
+            "True: it joins the open window, out of its chronological place."
+        ),
+    )
 
 
 class FlightEndConfig(BaseModel):
@@ -26,6 +46,16 @@ class FlightEndConfig(BaseModel):
 class TokenBudgetConfig(BaseModel):
     max_tokens_per_window: int = Field(
         default=4000, description="PLACEHOLDER - not specified in the plan, pending approval"
+    )
+    chars_per_token: float = Field(
+        default=2.5,
+        description=(
+            "PLACEHOLDER - rough Hebrew subword ratio for the heuristic counter. Stage 4 "
+            "replaces it with the model's own tokenizer."
+        ),
+    )
+    max_history_events: int = Field(
+        default=20, description="PLACEHOLDER - upper bound before the budget trims further"
     )
 
 
