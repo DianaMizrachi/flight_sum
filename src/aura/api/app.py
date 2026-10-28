@@ -13,7 +13,19 @@ from datetime import datetime
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path as PathLib
 
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, Path, Query, Response, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    FastAPI,
+    File,
+    Form,
+    HTTPException,
+    Path,
+    Query,
+    Response,
+    UploadFile,
+    status,
+)
 from fastapi.responses import FileResponse
 
 from aura.api.dependencies import get_ingestion_service, get_raw_store
@@ -24,9 +36,16 @@ from aura.api.schemas import (
     HealthResponse,
     IngestRequest,
     QueueStatus,
+    UploadReport,
+    UploadResponse,
 )
 from aura.api.status import SystemStatus, build_status, resolved_store_path
-from aura.ingestion import DeadLetterRecord, IngestionService, IngestResult
+from aura.ingestion import (
+    DeadLetterRecord,
+    IngestionService,
+    IngestResult,
+    parse_transcript_text,
+)
 from aura.ingestion.queue import InMemoryQueue
 from aura.raw_store import RawTranscriptStore
 from aura.schemas import Message, MessageStatus
@@ -39,6 +58,10 @@ except PackageNotFoundError:  # pragma: no cover - only when running from a sour
 # 422 as a literal: starlette renamed the constant mid-1.x, and the project
 # pins only fastapi>=0.110, so both spellings may be present.
 HTTP_422 = 422
+
+# תקרה להעלאת קובץ. טיסה של 35 דקות היא ~3KB, ולכן 5MB הוא מרווח גדול
+# מאוד שבעיקר מונע העלאה של קובץ שאינו תמלול בכלל.
+MAX_UPLOAD_BYTES = 5 * 1024 * 1024
 
 # השלבים שנבנו. רכיבים 3-4 בנויים אך אינם חשופים כנקודות קצה - ראו
 # aura.api.status, שמפריד בין "נבנה" לבין "חשוף ב-API".
@@ -142,6 +165,96 @@ def ingest_batch(
     for result in results:
         counts[result.status] += 1
     return BatchIngestResponse(
+        accepted_count=counts[MessageStatus.ACCEPTED],
+        duplicate_count=counts[MessageStatus.DUPLICATE],
+        dead_letter_count=counts[MessageStatus.DEAD_LETTER],
+        results=results,
+    )
+
+
+@ingestion_router.post(
+    "/messages/upload",
+    response_model=UploadResponse,
+    status_code=status.HTTP_200_OK,
+    summary="העלאת קובץ תמלול מהמחשב",
+    response_description="דוח על פענוח הקובץ ותוצאת קליטה לכל שורה",
+    responses={
+        status.HTTP_400_BAD_REQUEST: {
+            "model": ErrorResponse,
+            "description": "אין מזהה טיסה, הקובץ ריק, אינו UTF-8, או גדול מהתקרה",
+        }
+    },
+)
+async def upload_transcript(
+    file: UploadFile = File(
+        description="קובץ טקסט בפורמט message_id | timestamp | source | channel | text"
+    ),
+    flight_id: str | None = Form(
+        default=None,
+        description="מזהה הטיסה. גובר על הנחיית `# flight_id:` שבקובץ; נדרש אם אין הנחיה",
+    ),
+    service: IngestionService = Depends(get_ingestion_service),
+) -> UploadResponse:
+    """קליטת טיסה שלמה מקובץ אחד.
+
+    הקובץ מפוענח לשורות ואז נקלט שורה-שורה דרך אותו רכיב 1 שמשרת את
+    ``POST /messages`` - אותו נרמול, אותו זיהוי כפילויות ואותו
+    dead-letter. אין כאן מסלול קליטה שני.
+
+    הקוד הוא 200 גם כשחלק מהשורות נדחו: תערובת של נקלט/כפול/dead-letter
+    היא התוצאה הצפויה של קובץ אמיתי, לא שגיאה. 400 נשמר למקרים שבהם
+    *הקובץ* אינו שמיש - ואז לא נקלטה אף שורה.
+    """
+    raw = await file.read()
+    if len(raw) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"file is {len(raw)} bytes; the limit is {MAX_UPLOAD_BYTES}",
+        )
+    if not raw.strip():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="file is empty")
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"file is not valid UTF-8 (byte {exc.start}); Hebrew text must be UTF-8 encoded",
+        ) from exc
+
+    parsed = parse_transcript_text(text, flight_id=flight_id, source_name=file.filename)
+    if not parsed.flight_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "no flight_id: send it as a form field, or add a '# flight_id: <id>' "
+                "line to the file"
+            ),
+        )
+    if not parsed.messages:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"no message lines found in {parsed.total_lines} lines; expected "
+                "'message_id | timestamp | source | channel | text'"
+            ),
+        )
+
+    results = service.ingest_many(parsed.messages)
+    counts = {item: 0 for item in MessageStatus}
+    for result in results:
+        counts[result.status] += 1
+
+    return UploadResponse(
+        report=UploadReport(
+            filename=file.filename,
+            flight_id=parsed.flight_id,
+            flight_id_source="request" if flight_id else "directive",
+            total_lines=parsed.total_lines,
+            comment_lines=parsed.comment_lines,
+            blank_lines=parsed.blank_lines,
+            message_lines=parsed.message_count,
+            short_lines=parsed.short_lines,
+        ),
         accepted_count=counts[MessageStatus.ACCEPTED],
         duplicate_count=counts[MessageStatus.DUPLICATE],
         dead_letter_count=counts[MessageStatus.DEAD_LETTER],

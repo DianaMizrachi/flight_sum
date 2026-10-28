@@ -17,6 +17,8 @@ dev = [
 api = [
     "fastapi>=0.110",
     "uvicorn>=0.29",
+    # נדרש ל-multipart/form-data, כלומר להעלאת קובץ ב-POST /messages/upload.
+    "python-multipart>=0.0.9",
 ]
 
 [build-system]

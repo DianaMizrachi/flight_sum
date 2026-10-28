@@ -83,6 +83,42 @@ class BatchIngestResponse(BaseModel):
     results: list[IngestResult]
 
 
+class UploadReport(BaseModel):
+    """מה הקורא עשה עם הקובץ, בנפרד ממה שהקליטה עשתה עם ההודעות.
+
+    שתי השכבות נפרדות בכוונה: שורות שדולגו הן עניין של *פורמט הקובץ*,
+    ואילו accepted/duplicate/dead_letter הם עניין של *תוכן ההודעה*.
+    הפרדה ביניהן היא מה שמאפשרת להבדיל בין "הקובץ לא בפורמט" לבין
+    "הקובץ בפורמט אבל ההודעות פגומות".
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    filename: str | None = None
+    flight_id: str = Field(description="מזהה הטיסה שבו נקלטו ההודעות")
+    flight_id_source: str = Field(description="request / directive - מניין הגיע מזהה הטיסה")
+    total_lines: int
+    comment_lines: int = Field(description="שורות # - הערות, לא הודעות")
+    blank_lines: int
+    message_lines: int = Field(description="שורות שפוענחו כהודעות והועברו לקליטה")
+    short_lines: list[int] = Field(
+        default_factory=list,
+        description="שורות עם פחות מחמישה שדות. נשלחו לקליטה בכל זאת, ושם קיבלו סיבה",
+    )
+
+
+class UploadResponse(BaseModel):
+    """תוצאת העלאת קובץ: דוח הקורא + תוצאות הקליטה לכל הודעה."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    report: UploadReport
+    accepted_count: int
+    duplicate_count: int
+    dead_letter_count: int
+    results: list[IngestResult]
+
+
 class QueueStatus(BaseModel):
     """מצב התור הפנימי. התור הוא בזיכרון עד שנכנס צורכן אמיתי (שלב 3)."""
 

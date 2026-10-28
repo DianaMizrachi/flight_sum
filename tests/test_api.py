@@ -201,6 +201,7 @@ def test_spec_documents_every_endpoint_and_ingest_status_code(client: TestClient
     assert set(spec["paths"]) == {
         "/messages",
         "/messages/batch",
+        "/messages/upload",
         "/messages/{message_id}",
         "/flights",
         "/flights/{flight_id}/messages",
@@ -378,3 +379,131 @@ def test_dashboard_only_calls_endpoints_that_exist(client):
 def test_dashboard_is_excluded_from_the_openapi_spec(client):
     """The spec documents the API; the page that consumes it is not part of it."""
     assert "/" not in client.get("/openapi.json").json()["paths"]
+
+
+# --- file upload --------------------------------------------------------
+
+
+SAMPLE_FILE = Path(__file__).parent.parent / "samples" / "flight_sim_01.txt"
+
+
+def upload(client, content: bytes, name: str = "t.txt", flight_id: str | None = None):
+    data = {"flight_id": flight_id} if flight_id else None
+    return client.post("/messages/upload", files={"file": (name, content, "text/plain")}, data=data)
+
+
+def test_upload_ingests_the_sample_file_as_documented(client):
+    """The sample file states its own expected outcome in a comment:
+    23 accepted, 2 duplicates, 4 dead-lettered out of 29 message lines."""
+    response = upload(client, SAMPLE_FILE.read_bytes(), "flight_sim_01.txt")
+
+    assert response.status_code == 200
+    body = response.json()
+    counts = (body["accepted_count"], body["duplicate_count"], body["dead_letter_count"])
+    assert counts == (23, 2, 4)
+    assert body["report"]["message_lines"] == 29
+    assert body["report"]["flight_id"] == "flight-sim-01"
+    assert body["report"]["flight_id_source"] == "directive"
+    assert body["report"]["short_lines"] == []
+
+
+def test_uploaded_messages_are_retrievable_and_ordered(client):
+    upload(client, SAMPLE_FILE.read_bytes(), "flight_sim_01.txt")
+
+    messages = client.get("/flights/flight-sim-01/messages").json()
+    assert len(messages) == 23
+    stamps = [m["timestamp"] for m in messages]
+    assert stamps == sorted(stamps), "a late line must come back in its spoken order"
+
+
+def test_upload_records_the_source_line_for_traceability(client):
+    """Every event must be traceable to its sentence; a file-fed sentence
+    should also be traceable to the line it came from."""
+    body = upload(client, SAMPLE_FILE.read_bytes(), "flight_sim_01.txt").json()
+    accepted = [r for r in body["results"] if r["message"]]
+    assert accepted
+    for result in accepted:
+        metadata = result["message"]["metadata"]
+        assert metadata["source_file"] == "flight_sim_01.txt"
+        assert metadata["source_line"].isdigit()
+
+
+def test_upload_reuses_the_same_ingestion_rules(client):
+    """No second ingestion path: normalisation and dedup must still apply."""
+    content = (
+        "# flight_id: upload-rules\n"
+        "u-m01 | 2026-10-28T08:00:00Z | operator | command | בקרה,  נץ   אחת,  כפול.\n"
+        "u-m01 | 2026-10-28T08:00:00Z | operator | command | בקרה,  נץ   אחת,  כפול.\n"
+    ).encode()
+    body = upload(client, content).json()
+
+    assert (body["accepted_count"], body["duplicate_count"]) == (1, 1)
+    message = body["results"][0]["message"]
+    assert message["text"] == "בקרה, נץ אחת, כפול.", "whitespace must be normalised"
+    assert message["metadata"]["raw_text"] == "בקרה,  נץ   אחת,  כפול."
+
+
+def test_form_flight_id_overrides_the_directive_in_the_file(client):
+    body = upload(client, SAMPLE_FILE.read_bytes(), "s.txt", flight_id="override-01").json()
+    assert body["report"]["flight_id"] == "override-01"
+    assert body["report"]["flight_id_source"] == "request"
+    assert client.get("/flights/override-01/messages").json()
+
+
+def test_upload_without_any_flight_id_is_rejected_whole(client):
+    content = b"x | 2026-10-28T08:00:00Z | operator | command | test\n"
+    response = upload(client, content)
+
+    assert response.status_code == 400
+    assert "flight_id" in response.json()["detail"]
+    assert client.get("/flights").json() == [], "a rejected file must ingest nothing"
+
+
+def test_upload_rejects_a_file_with_no_message_lines(client):
+    response = upload(client, b"# only a comment\n\n# and another\n", flight_id="f")
+    assert response.status_code == 400
+    assert "no message lines" in response.json()["detail"]
+
+
+def test_upload_rejects_an_empty_file(client):
+    assert upload(client, b"   \n\n", flight_id="f").status_code == 400
+
+
+def test_upload_rejects_non_utf8_so_hebrew_cannot_arrive_mangled(client):
+    """Hebrew in cp1255 would decode to plausible-looking rubbish rather
+    than fail, so the encoding is checked rather than guessed."""
+    response = upload(client, "שלום | x".encode("cp1255"), flight_id="f")
+    assert response.status_code == 400
+    assert "UTF-8" in response.json()["detail"]
+
+
+def test_upload_reports_short_lines_but_still_ingests_them(client):
+    """A malformed line must reach the dead-letter log with a reason, not
+    be dropped by the parser."""
+    content = (
+        "# flight_id: short-lines\n"
+        "s-m01 | 2026-10-28T08:00:00Z | operator | command | תקין.\n"
+        "s-m02 | 2026-10-28T08:00:30Z\n"
+    ).encode()
+    body = upload(client, content).json()
+
+    assert body["report"]["short_lines"] == [3]
+    assert body["accepted_count"] == 1
+    assert body["dead_letter_count"] == 1
+    assert body["results"][1]["dead_letter"]["reason"] == "missing_required_field"
+
+
+def test_upload_keeps_a_pipe_inside_the_sentence(client):
+    content = (
+        "# flight_id: pipe-test\n"
+        "p-m01 | 2026-10-28T08:00:00Z | operator | command | טקסט עם | צינור בתוכו.\n"
+    ).encode()
+    body = upload(client, content).json()
+    assert body["results"][0]["message"]["text"] == "טקסט עם | צינור בתוכו."
+
+
+def test_upload_is_documented_in_the_spec(client):
+    spec = client.get("/openapi.json").json()
+    assert "/messages/upload" in spec["paths"]
+    body = spec["paths"]["/messages/upload"]["post"]["requestBody"]
+    assert "multipart/form-data" in body["content"]

@@ -101,6 +101,58 @@
         }
       }
     },
+    "/messages/upload": {
+      "post": {
+        "tags": [
+          "ingestion"
+        ],
+        "summary": "העלאת קובץ תמלול מהמחשב",
+        "description": "קליטת טיסה שלמה מקובץ אחד.\n\nהקובץ מפוענח לשורות ואז נקלט שורה-שורה דרך אותו רכיב 1 שמשרת את\n``POST /messages`` - אותו נרמול, אותו זיהוי כפילויות ואותו\ndead-letter. אין כאן מסלול קליטה שני.\n\nהקוד הוא 200 גם כשחלק מהשורות נדחו: תערובת של נקלט/כפול/dead-letter\nהיא התוצאה הצפויה של קובץ אמיתי, לא שגיאה. 400 נשמר למקרים שבהם\n*הקובץ* אינו שמיש - ואז לא נקלטה אף שורה.",
+        "operationId": "upload_transcript_messages_upload_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_transcript_messages_upload_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "דוח על פענוח הקובץ ותוצאת קליטה לכל שורה",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "אין מזהה טיסה, הקובץ ריק, אינו UTF-8, או גדול מהתקרה",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/flights": {
       "get": {
         "tags": [
@@ -473,6 +525,33 @@
         ],
         "title": "BatchIngestResponse",
         "description": "סיכום קליטה מרוכז: מנייה לפי סטטוס, ותוצאה מלאה לכל הודעה."
+      },
+      "Body_upload_transcript_messages_upload_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "description": "קובץ טקסט בפורמט message_id | timestamp | source | channel | text"
+          },
+          "flight_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Flight Id",
+            "description": "מזהה הטיסה. גובר על הנחיית `# flight_id:` שבקובץ; נדרש אם אין הנחיה"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_transcript_messages_upload_post"
       },
       "ComponentStatus": {
         "properties": {
@@ -1166,6 +1245,106 @@
         ],
         "title": "SystemStatus",
         "description": "מצב המערכת כולה בתשובה אחת."
+      },
+      "UploadReport": {
+        "properties": {
+          "filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filename"
+          },
+          "flight_id": {
+            "type": "string",
+            "title": "Flight Id",
+            "description": "מזהה הטיסה שבו נקלטו ההודעות"
+          },
+          "flight_id_source": {
+            "type": "string",
+            "title": "Flight Id Source",
+            "description": "request / directive - מניין הגיע מזהה הטיסה"
+          },
+          "total_lines": {
+            "type": "integer",
+            "title": "Total Lines"
+          },
+          "comment_lines": {
+            "type": "integer",
+            "title": "Comment Lines",
+            "description": "שורות # - הערות, לא הודעות"
+          },
+          "blank_lines": {
+            "type": "integer",
+            "title": "Blank Lines"
+          },
+          "message_lines": {
+            "type": "integer",
+            "title": "Message Lines",
+            "description": "שורות שפוענחו כהודעות והועברו לקליטה"
+          },
+          "short_lines": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Short Lines",
+            "description": "שורות עם פחות מחמישה שדות. נשלחו לקליטה בכל זאת, ושם קיבלו סיבה"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "flight_id",
+          "flight_id_source",
+          "total_lines",
+          "comment_lines",
+          "blank_lines",
+          "message_lines"
+        ],
+        "title": "UploadReport",
+        "description": "מה הקורא עשה עם הקובץ, בנפרד ממה שהקליטה עשתה עם ההודעות.\n\nשתי השכבות נפרדות בכוונה: שורות שדולגו הן עניין של *פורמט הקובץ*,\nואילו accepted/duplicate/dead_letter הם עניין של *תוכן ההודעה*.\nהפרדה ביניהן היא מה שמאפשרת להבדיל בין \"הקובץ לא בפורמט\" לבין\n\"הקובץ בפורמט אבל ההודעות פגומות\"."
+      },
+      "UploadResponse": {
+        "properties": {
+          "report": {
+            "$ref": "#/components/schemas/UploadReport"
+          },
+          "accepted_count": {
+            "type": "integer",
+            "title": "Accepted Count"
+          },
+          "duplicate_count": {
+            "type": "integer",
+            "title": "Duplicate Count"
+          },
+          "dead_letter_count": {
+            "type": "integer",
+            "title": "Dead Letter Count"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/IngestResult"
+            },
+            "type": "array",
+            "title": "Results"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "report",
+          "accepted_count",
+          "duplicate_count",
+          "dead_letter_count",
+          "results"
+        ],
+        "title": "UploadResponse",
+        "description": "תוצאת העלאת קובץ: דוח הקורא + תוצאות הקליטה לכל הודעה."
       },
       "ValidationError": {
         "properties": {

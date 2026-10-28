@@ -15,6 +15,11 @@ from aura.ingestion.models import DeadLetterReason, DeadLetterRecord, IngestResu
 from aura.ingestion.normalize import normalize_identifier, normalize_text, normalize_timestamp
 from aura.ingestion.queue import InMemoryQueue, MessageQueue
 from aura.ingestion.service import IngestionService
+from aura.ingestion.text_format import (
+    ParsedTranscript,
+    find_flight_id_directive,
+    parse_transcript_text,
+)
 
 __all__ = [
     "DeadLetterReason",
@@ -26,9 +31,12 @@ __all__ = [
     "IngestResult",
     "IngestionService",
     "MessageQueue",
+    "ParsedTranscript",
     "dedup_key",
+    "find_flight_id_directive",
     "normalize_identifier",
     "normalize_text",
     "normalize_timestamp",
+    "parse_transcript_text",
     "payload_hash",
 ]
