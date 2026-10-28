@@ -14,12 +14,13 @@
 
 ## הרצה מקומית
 
+### התקנה
+
 ```bash
+unset PYTHONPATH                    # ראו ההערה למטה - נדרש במכונה הזו
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -e ".[dev]"
-pytest
-ruff check src tests
+pip install -e ".[dev,api]"         # api נדרש להרצת השרת והדשבורד
 ```
 
 > הערה לסביבה הזו בלבד: יש משתנה סביבה `PYTHONPATH` גלובלי שמצביע על
@@ -27,9 +28,61 @@ ruff check src tests
 > יש להריץ `unset PYTHONPATH` לפני הפעלת ה-venv. זו תכונה של המחשב הזה,
 > לא של הפרויקט.
 
-תשתית מקומית (מסד נתונים, תור ומודל LLM מקומי): `docker-compose.yml`.
-ה-LLM רץ מקומית על חומרת המשתמש (RTX A4500, 16GB VRAM) דרך Ollama -
-ראו הערה ב-docker-compose.yml לבחירת מודל ראשוני ולהחלפתו.
+### בדיקות
+
+```bash
+pytest                              # 295 בדיקות, ללא רשת וללא GPU
+ruff check src tests scripts
+```
+
+הבדיקות מריצות מודל מדומה בלבד. אין צורך ב-ollama, ב-docker או ב-GPU.
+
+### השירות והדשבורד
+
+```bash
+uvicorn aura.api:app --reload
+```
+
+| כתובת | מה יש שם |
+| --- | --- |
+| <http://localhost:8000/> | דשבורד מצב המערכת + העלאת קובץ תמלול |
+| <http://localhost:8000/docs> | Swagger |
+| <http://localhost:8000/redoc> | ReDoc |
+| <http://localhost:8000/status> | מצב המערכת כ-JSON |
+
+המאגר נוצר ב-`var/aura-raw.db`. `AURA_RAW_STORE_PATH` מחליף אותו, ו-
+`:memory:` נותן הרצה חולפת:
+
+```bash
+AURA_RAW_STORE_PATH=:memory: uvicorn aura.api:app
+```
+
+### קליטת טיסה
+
+דרך הדשבורד (גרירת קובץ), או משורת הפקודה:
+
+```bash
+curl -X POST -F "file=@samples/flight_sim_01.txt" \
+     http://localhost:8000/messages/upload
+```
+
+### הרצת המודל המקומי
+
+ollama רץ על המארח, לא ב-docker-compose:
+
+```bash
+ollama serve                        # בדרך כלל כבר רץ כשירות
+ollama pull hf.co/dicta-il/DictaLM-3.0-Nemotron-12B-Instruct-GGUF:Q4_K_M
+ollama pull qwen3:14b
+
+python scripts/evaluate_llm.py --model qwen3:14b --think on
+```
+
+### תשתית אופציונלית
+
+`docker-compose.yml` מרים Postgres ו-Redis בלבד. אין בו שירות LLM
+בכוונה - ראו ההערה בקובץ. שום דבר ממה שרץ כאן כרגע אינו תלוי בו:
+המאגר הוא SQLite והתור הוא בזיכרון עד שיוחלפו בשלבים מתקדמים.
 
 ## מבנה הריפו
 
