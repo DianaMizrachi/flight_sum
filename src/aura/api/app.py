@@ -11,8 +11,10 @@ Swagger UI: ``/docs``   ReDoc: ``/redoc``   Raw spec: ``/openapi.json``
 
 from datetime import datetime
 from importlib.metadata import PackageNotFoundError, version
+from pathlib import Path as PathLib
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Path, Query, Response, status
+from fastapi.responses import FileResponse
 
 from aura.api.dependencies import get_ingestion_service, get_raw_store
 from aura.api.schemas import (
@@ -23,6 +25,7 @@ from aura.api.schemas import (
     IngestRequest,
     QueueStatus,
 )
+from aura.api.status import SystemStatus, build_status, resolved_store_path
 from aura.ingestion import DeadLetterRecord, IngestionService, IngestResult
 from aura.ingestion.queue import InMemoryQueue
 from aura.raw_store import RawTranscriptStore
@@ -37,7 +40,12 @@ except PackageNotFoundError:  # pragma: no cover - only when running from a sour
 # pins only fastapi>=0.110, so both spellings may be present.
 HTTP_422 = 422
 
-IMPLEMENTED_STAGES = [0, 1, 2]
+# השלבים שנבנו. רכיבים 3-4 בנויים אך אינם חשופים כנקודות קצה - ראו
+# aura.api.status, שמפריד בין "נבנה" לבין "חשוף ב-API".
+IMPLEMENTED_STAGES = [0, 1, 2, 3, 4]
+
+STATIC_DIR = PathLib(__file__).parent / "static"
+DASHBOARD_FILE = STATIC_DIR / "index.html"
 
 # סטטוס הקליטה -> קוד HTTP. dead-letter הוא 422: ההודעה נרשמה עם סיבה,
 # אבל המקור צריך לדעת שהיא לא תיכנס לניתוח.
@@ -83,6 +91,7 @@ TAGS_METADATA = [
 ingestion_router = APIRouter(tags=["ingestion"])
 transcript_router = APIRouter(tags=["transcript"])
 operations_router = APIRouter(tags=["operations"])
+app_router = APIRouter()
 
 
 @ingestion_router.post(
@@ -225,6 +234,34 @@ def health() -> HealthResponse:
     return HealthResponse(status="ok", version=API_VERSION, implemented_stages=IMPLEMENTED_STAGES)
 
 
+@operations_router.get(
+    "/status",
+    response_model=SystemStatus,
+    summary="מצב המערכת כולה",
+    response_description="שלבים, רכיבים, מאגר, תור, dead-letter, זמינות המודל והספים בתוקף",
+)
+def system_status(
+    store: RawTranscriptStore = Depends(get_raw_store),
+    service: IngestionService = Depends(get_ingestion_service),
+) -> SystemStatus:
+    """התשובה שמאחורי הדשבורד ב-``/``.
+
+    מפריד במפורש בין רכיב ש*נבנה* לרכיב ש*חשוף* ב-API, ובין המודל
+    שמוגדר ב-config למודל שבאמת מותקן ב-ollama - שתי הבחנות שבלעדיהן
+    דף מצב מציג תמונה אופטימית מהמצב בפועל.
+    """
+    return build_status(store, service, API_VERSION, resolved_store_path())
+
+
+@app_router.get(
+    "/",
+    include_in_schema=False,
+    summary="דשבורד מצב המערכת",
+)
+def dashboard() -> FileResponse:
+    return FileResponse(DASHBOARD_FILE, media_type="text/html")
+
+
 def create_app() -> FastAPI:
     app = FastAPI(
         title="aura API",
@@ -238,6 +275,7 @@ def create_app() -> FastAPI:
     app.include_router(ingestion_router)
     app.include_router(transcript_router)
     app.include_router(operations_router)
+    app.include_router(app_router)
     return app
 
 

@@ -395,6 +395,28 @@
           }
         }
       }
+    },
+    "/status": {
+      "get": {
+        "tags": [
+          "operations"
+        ],
+        "summary": "מצב המערכת כולה",
+        "description": "התשובה שמאחורי הדשבורד ב-``/``.\n\nמפריד במפורש בין רכיב ש*נבנה* לרכיב ש*חשוף* ב-API, ובין המודל\nשמוגדר ב-config למודל שבאמת מותקן ב-ollama - שתי הבחנות שבלעדיהן\nדף מצב מציג תמונה אופטימית מהמצב בפועל.",
+        "operationId": "system_status_status_get",
+        "responses": {
+          "200": {
+            "description": "שלבים, רכיבים, מאגר, תור, dead-letter, זמינות המודל והספים בתוקף",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemStatus"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -451,6 +473,42 @@
         ],
         "title": "BatchIngestResponse",
         "description": "סיכום קליטה מרוכז: מנייה לפי סטטוס, ותוצאה מלאה לכל הודעה."
+      },
+      "ComponentStatus": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "name_he": {
+            "type": "string",
+            "title": "Name He"
+          },
+          "stage": {
+            "type": "integer",
+            "title": "Stage"
+          },
+          "built": {
+            "type": "boolean",
+            "title": "Built",
+            "description": "ממומש ונבדק"
+          },
+          "exposed_over_http": {
+            "type": "boolean",
+            "title": "Exposed Over Http",
+            "description": "קיים גם כנקודת קצה ב-API הזה"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "name_he",
+          "stage",
+          "built",
+          "exposed_over_http"
+        ],
+        "title": "ComponentStatus"
       },
       "DeadLetterReason": {
         "type": "string",
@@ -534,6 +592,28 @@
         ],
         "title": "DeadLetterRecord",
         "description": "רשומת dead-letter: הודעה שלא ניתן היה לקלוט, עם הסיבה והמקור הגולמי.\n\n``raw_payload`` נשמר כפי שהגיע, לפי העיקרון \"שמירה לפני עיבוד\" - גם\nהודעה פגומה לא נעלמת, וניתן לנסות לקלוט אותה מחדש אחרי תיקון המקור."
+      },
+      "DeadLetterStatus": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "by_reason": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "By Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "total",
+          "by_reason"
+        ],
+        "title": "DeadLetterStatus"
       },
       "DedupStrategy": {
         "type": "string",
@@ -904,6 +984,60 @@
         ],
         "title": "MessageStatus"
       },
+      "ModelStatus": {
+        "properties": {
+          "base_url": {
+            "type": "string",
+            "title": "Base Url"
+          },
+          "reachable": {
+            "type": "boolean",
+            "title": "Reachable"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "configured_model": {
+            "type": "string",
+            "title": "Configured Model"
+          },
+          "configured_model_available": {
+            "type": "boolean",
+            "title": "Configured Model Available"
+          },
+          "available_models": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Available Models"
+          },
+          "loaded_models": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Loaded Models"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "base_url",
+          "reachable",
+          "configured_model",
+          "configured_model_available"
+        ],
+        "title": "ModelStatus"
+      },
       "QueueStatus": {
         "properties": {
           "depth": {
@@ -919,6 +1053,119 @@
         ],
         "title": "QueueStatus",
         "description": "מצב התור הפנימי. התור הוא בזיכרון עד שנכנס צורכן אמיתי (שלב 3)."
+      },
+      "StoreStatus": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "exists": {
+            "type": "boolean",
+            "title": "Exists"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "title": "Size Bytes"
+          },
+          "flight_count": {
+            "type": "integer",
+            "title": "Flight Count"
+          },
+          "message_count": {
+            "type": "integer",
+            "title": "Message Count"
+          },
+          "append_only": {
+            "type": "boolean",
+            "title": "Append Only",
+            "description": "נאכף בטריגרים של מסד הנתונים",
+            "default": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "path",
+          "exists",
+          "size_bytes",
+          "flight_count",
+          "message_count"
+        ],
+        "title": "StoreStatus"
+      },
+      "SystemStatus": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Started At"
+          },
+          "uptime_seconds": {
+            "type": "number",
+            "title": "Uptime Seconds"
+          },
+          "stages_total": {
+            "type": "integer",
+            "title": "Stages Total"
+          },
+          "stages_built": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Stages Built"
+          },
+          "components": {
+            "items": {
+              "$ref": "#/components/schemas/ComponentStatus"
+            },
+            "type": "array",
+            "title": "Components"
+          },
+          "store": {
+            "$ref": "#/components/schemas/StoreStatus"
+          },
+          "queue_depth": {
+            "type": "integer",
+            "title": "Queue Depth"
+          },
+          "dead_letters": {
+            "$ref": "#/components/schemas/DeadLetterStatus"
+          },
+          "llm": {
+            "$ref": "#/components/schemas/ModelStatus"
+          },
+          "window_settings": {
+            "$ref": "#/components/schemas/WindowSettingsStatus"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "status",
+          "version",
+          "started_at",
+          "uptime_seconds",
+          "stages_total",
+          "stages_built",
+          "components",
+          "store",
+          "queue_depth",
+          "dead_letters",
+          "llm",
+          "window_settings"
+        ],
+        "title": "SystemStatus",
+        "description": "מצב המערכת כולה בתשובה אחת."
       },
       "ValidationError": {
         "properties": {
@@ -959,6 +1206,45 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "WindowSettingsStatus": {
+        "properties": {
+          "silence_threshold_seconds": {
+            "type": "integer",
+            "title": "Silence Threshold Seconds"
+          },
+          "max_duration_seconds": {
+            "type": "integer",
+            "title": "Max Duration Seconds"
+          },
+          "max_sentences": {
+            "type": "integer",
+            "title": "Max Sentences"
+          },
+          "overlap_sentences": {
+            "type": "integer",
+            "title": "Overlap Sentences"
+          },
+          "close_on_speaker_change": {
+            "type": "boolean",
+            "title": "Close On Speaker Change"
+          },
+          "max_tokens_per_window": {
+            "type": "integer",
+            "title": "Max Tokens Per Window"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "silence_threshold_seconds",
+          "max_duration_seconds",
+          "max_sentences",
+          "overlap_sentences",
+          "close_on_speaker_change",
+          "max_tokens_per_window"
+        ],
+        "title": "WindowSettingsStatus"
       }
     }
   },

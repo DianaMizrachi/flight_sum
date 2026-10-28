@@ -179,7 +179,9 @@ def test_health_reports_the_implemented_stages(client: TestClient):
     body = client.get("/health").json()
 
     assert body["status"] == "ok"
-    assert body["implemented_stages"] == [0, 1, 2]
+    # רכיבים 3-4 נבנו אך אינם חשופים כנקודות קצה; /status מפריד בין
+    # השניים, ואילו /health מדווח רק מה נבנה בבנייה הזאת.
+    assert body["implemented_stages"] == [0, 1, 2, 3, 4]
 
 
 # --- ה-OpenAPI שמתפרסם -------------------------------------------------
@@ -204,6 +206,7 @@ def test_spec_documents_every_endpoint_and_ingest_status_code(client: TestClient
         "/flights/{flight_id}/messages",
         "/dead-letters",
         "/queue",
+        "/status",
         "/health",
     }
     ingest = spec["paths"]["/messages"]["post"]
@@ -281,3 +284,97 @@ def test_dead_lettered_payloads_never_reach_the_transcript(client: TestClient):
 
     assert client.get("/flights").json() == []
     assert len(client.get("/dead-letters").json()) == len(data["cases"])
+
+
+# --- status endpoint and dashboard (part of stage 10) --------------------
+
+
+def test_status_reports_stages_and_components(client):
+    body = client.get("/status").json()
+    assert body["status"] == "ok"
+    assert body["stages_total"] == 13
+    assert body["stages_built"] == [0, 1, 2, 3, 4]
+    assert len(body["components"]) == 12
+    assert body["uptime_seconds"] >= 0
+
+
+def test_status_separates_built_from_exposed_over_http(client):
+    """Components 3 and 4 are built but are libraries; nothing calls them
+    over HTTP yet. Collapsing the two would make the page claim a running
+    pipeline that does not exist until stage 6."""
+    components = {c["id"]: c for c in client.get("/status").json()["components"]}
+    assert components[3]["built"] and not components[3]["exposed_over_http"]
+    assert components[4]["built"] and not components[4]["exposed_over_http"]
+    assert components[1]["built"] and components[1]["exposed_over_http"]
+    assert not components[5]["built"]
+
+
+def test_status_counts_match_the_store_and_dead_letter_log(client):
+    client.post(
+        "/messages",
+        json={
+            "flight_id": "status-flight",
+            "timestamp": "2026-10-28T08:00:00Z",
+            "source": "operator",
+            "text": "בקרה, בדיקת מצב.",
+        },
+    )
+    client.post("/messages", json={"flight_id": "status-flight", "text": ""})
+
+    body = client.get("/status").json()
+    stored = client.get("/flights/status-flight/messages").json()
+    assert body["store"]["message_count"] == len(stored)
+    assert body["store"]["flight_count"] == len(client.get("/flights").json())
+    assert body["dead_letters"]["total"] == len(client.get("/dead-letters").json())
+    assert body["dead_letters"]["by_reason"], "a rejected message must be attributed to a reason"
+
+
+def test_status_reports_the_window_thresholds_actually_in_effect(client):
+    """The page must show the running config, not the plan's suggestion."""
+    from aura.config import DEFAULT_SETTINGS
+
+    settings = client.get("/status").json()["window_settings"]
+    window = DEFAULT_SETTINGS.window
+    assert settings["silence_threshold_seconds"] == window.silence_threshold_seconds
+    assert settings["max_tokens_per_window"] == DEFAULT_SETTINGS.token_budget.max_tokens_per_window
+
+
+def test_status_does_not_fail_when_ollama_is_unreachable(client, monkeypatch):
+    """A missing model is information for the dashboard, not an outage."""
+    from aura.api import status as status_module
+
+    def boom(*args, **kwargs):
+        raise OSError("connection refused")
+
+    monkeypatch.setattr(status_module.httpx, "Client", boom)
+    body = client.get("/status").json()
+    assert body["status"] == "ok"
+    assert body["llm"]["reachable"] is False
+    assert "connection refused" in body["llm"]["error"]
+    assert body["llm"]["available_models"] == []
+
+
+def test_dashboard_is_served_at_the_root(client):
+    response = client.get("/")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    assert "aura" in response.text
+
+
+def test_dashboard_only_calls_endpoints_that_exist(client):
+    """The page is plain JS with hard-coded paths; a renamed endpoint would
+    otherwise break it silently and only in a browser."""
+    import re
+
+    page = client.get("/").text
+    paths = set(re.findall(r'api\("(/[^"?]*)', page)) | set(
+        re.findall(r'api\(`(/[^`?$]*)', page)
+    )
+    assert "/status" in paths
+    for path in paths:
+        assert client.get(path).status_code == 200, f"dashboard calls missing {path}"
+
+
+def test_dashboard_is_excluded_from_the_openapi_spec(client):
+    """The spec documents the API; the page that consumes it is not part of it."""
+    assert "/" not in client.get("/openapi.json").json()["paths"]

@@ -28,7 +28,12 @@ where = ["src"]
 
 # קבצי הנתונים של החבילה: טקסונומיית האירועים וסכמות ה-SQL של המאגר הגולמי.
 [tool.setuptools.package-data]
-aura = ["taxonomy/*.yaml", "raw_store/*.sql", "raw_store/migrations/*.sql"]
+aura = [
+    "taxonomy/*.yaml",
+    "raw_store/*.sql",
+    "raw_store/migrations/*.sql",
+    "api/static/*.html",
+]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
