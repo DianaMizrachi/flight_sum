@@ -113,6 +113,8 @@ class OllamaClient:
                 "num_ctx": self.config.num_ctx,
             },
         }
+        if self.config.think is not None:
+            payload["think"] = self.config.think
         started = time.monotonic()
         try:
             response = self._http().post("/api/chat", json=payload)

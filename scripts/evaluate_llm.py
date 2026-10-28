@@ -183,7 +183,8 @@ def print_scenario_detail(score: ScenarioScore) -> None:
             f"    [{mark:>11}] {outcome.key} ({tag}) {outcome.type}"
             f" expected={outcome.expected_source_ids} cited={outcome.cited_source_ids}"
             + ("" if outcome.matched_count <= 1 else f" SPLIT x{outcome.matched_count}")
-            + ("" if outcome.entity_shape_ok else " entity-shape-mismatch")
+            # צורת הישויות נבדקת רק על אירוע שזוהה - על MISS היא חסרת מידע.
+            + ("" if outcome.entity_shape_ok or not outcome.detected else " entity-shape-mismatch")
         )
     for trap in score.traps:
         if trap.triggered:
@@ -246,6 +247,11 @@ def main() -> int:
     parser.add_argument("--temperature", type=float, default=DEFAULT_SETTINGS.llm.temperature)
     parser.add_argument("--num-ctx", type=int, default=DEFAULT_SETTINGS.llm.num_ctx)
     parser.add_argument(
+        "--think",
+        choices=["on", "off"],
+        help="force thinking mode on/off for models that support it (default: model's own)",
+    )
+    parser.add_argument(
         "--plan-defaults",
         action="store_true",
         help="window with the plan's values instead of the recommended ones",
@@ -282,6 +288,7 @@ def main() -> int:
             timeout_seconds=args.timeout,
             temperature=args.temperature,
             num_ctx=args.num_ctx,
+            think=None if args.think is None else args.think == "on",
         )
         settings = Settings(window=window_config, llm=config)
         for profile in profiles:

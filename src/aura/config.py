@@ -65,8 +65,10 @@ class LLMConfig(BaseModel):
     model: str = Field(
         default="hf.co/dicta-il/DictaLM-3.0-Nemotron-12B-Instruct-GGUF:Q4_K_M",
         description=(
-            "PLACEHOLDER - נבחר בהשוואה של tests/fixtures/model_eval. ברירת המחדל "
-            "היא הדגם שנכנס ל-16GB VRAM עם מרווח ל-KV cache."
+            "לאישור. ההשוואה ב-tests/fixtures/model_eval (ראו README) מצאה ש-qwen3:14b "
+            "עם think=True עובר את שער שלב 4 (100% ייחוס) וש-DictaLM-12B לא (88%). "
+            "ברירת המחדל נשארה DictaLM כי בחירת qwen היא גם שאלת מקור-מודל ולא רק "
+            "שאלת מדידה, וההכרעה בה אינה טכנית."
         ),
     )
     base_url: str = Field(default="http://localhost:11434")
@@ -79,6 +81,14 @@ class LLMConfig(BaseModel):
     )
     keep_alive: str = Field(
         default="10m", description="כמה זמן ollama משאיר את המודל טעון בין קריאות"
+    )
+    think: bool | None = Field(
+        default=None,
+        description=(
+            "מצב חשיבה למודלים שתומכים בו (Qwen3 ואחרים). None = ברירת המחדל של "
+            "המודל. במדידה הראשונה חשיבה עלתה פי 3.7 בזמן, ולכן זה שדה שמודדים "
+            "ולא קובעים מראש."
+        ),
     )
     num_ctx: int = Field(
         default=8192,
