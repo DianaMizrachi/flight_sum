@@ -170,6 +170,7 @@
           <input type="file" id="pick" accept=".txt,.text,text/plain" hidden>
           גרור קובץ לכאן או <button id="browse" type="button">בחר</button>
           <div class="mono" style="margin-top:6px">message_id | timestamp | source | channel | text</div>
+          <div style="margin-top:5px">הטיסה נלקחת משדה "מזהה טיסה" שלמעלה, או משורת <span class="mono">#&nbsp;flight_id:</span> בקובץ</div>
         </div>
       </label>
     </details>
@@ -352,17 +353,61 @@ $("browse").onclick = (e) => { e.preventDefault(); $("pick").click(); };
 drop.addEventListener("drop", (e) => upload(e.dataTransfer.files[0]));
 $("pick").onchange = (e) => upload(e.target.files[0]);
 
+// הודעות השגיאה של ה-API מנוסחות למי שקורא אותן ב-Swagger. בקליינט הן
+// מתורגמות להוראה מעשית, אחרת המשתמש מקבל טקסט מפתחים ולא יודע מה לעשות.
+const UPLOAD_ERRORS = [
+  ["no flight_id", "אין מזהה טיסה בקובץ. הזן מזהה טיסה בשדה שלמעלה ונסה שוב."],
+  ["no message lines", "לא נמצאו שורות הודעה בקובץ. כל שורה צריכה להיות " +
+    "<span class='mono'>message_id | timestamp | source | channel | text</span>."],
+  ["not valid UTF-8", "הקובץ אינו בקידוד UTF-8. שמור אותו מחדש כ-UTF-8 (עברית ב-cp1255 " +
+    "הייתה נקלטת כג'יבריש)."],
+  ["file is empty", "הקובץ ריק."],
+  ["the limit is", "הקובץ גדול מהמותר (עד 5MB)."],
+];
+
+function explainUploadError(detail) {
+  const text = String(detail ?? "");
+  for (const [needle, message] of UPLOAD_ERRORS) {
+    if (text.includes(needle)) return message;
+  }
+  return esc(text);
+}
+
+/** מחפש את ההנחיה בקובץ בצד הלקוח, כדי לא לשלוח העלאה שתיכשל ממילא. */
+async function flightIdInFile(file) {
+  try {
+    const head = await file.slice(0, 8192).text();
+    const match = head.match(/^#\s*flight_id\s*:\s*([^\s#]+)\s*$/m);
+    return match ? match[1] : null;
+  } catch (e) {
+    return null;   // לא הצלחנו לקרוא - נשלח ונתן לשרת להחליט
+  }
+}
+
 async function upload(file) {
   if (!file) return;
+
+  const flight = $("flight").value.trim();
+  if (!flight && !(await flightIdInFile(file))) {
+    say("bad", "<b>צריך מזהה טיסה.</b><div class=\"sub\">בקובץ הזה אין שורת " +
+      "<span class='mono'>#&nbsp;flight_id:</span>, לכן הזן מזהה טיסה בשדה שלמעלה " +
+      "ואז גרור את הקובץ שוב.</div>");
+    $("flight").focus();
+    $("pick").value = "";
+    return;
+  }
+
   const body = new FormData();
   body.append("file", file);
-  const flight = $("flight").value.trim();
   if (flight) body.append("flight_id", flight);
   say("ok", "קולט את הקובץ…");
   try {
     const r = await fetch("/messages/upload", { method: "POST", body });
     const d = await r.json();
-    if (!r.ok) { say("bad", `<b>הקובץ נדחה.</b><div class="sub">${esc(d.detail)}</div>`); return; }
+    if (!r.ok) {
+      say("bad", `<b>הקובץ לא נקלט.</b><div class="sub">${explainUploadError(d.detail)}</div>`);
+      return;
+    }
     $("flight").value = d.report.flight_id;
     say("ok", `<b>${esc(file.name)}</b> נקלט לטיסה <span class="mono">${esc(d.report.flight_id)}</span>` +
       `<div class="sub">נקלטו ${d.accepted_count} · כפילויות ${d.duplicate_count} · נדחו ${d.dead_letter_count}</div>`);

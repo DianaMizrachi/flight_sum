@@ -543,3 +543,34 @@ def test_upload_is_documented_in_the_spec(client):
     assert "/messages/upload" in spec["paths"]
     body = spec["paths"]["/messages/upload"]["post"]["requestBody"]
     assert "multipart/form-data" in body["content"]
+
+
+def test_client_translates_every_upload_error_the_api_can_return(client):
+    """The client shows guidance, not the API's own wording.
+
+    The API's details are written for someone reading Swagger ("send it as
+    a form field..."). Leaking one into the client leaves the user with
+    developer text and no idea what to do - which is exactly what happened
+    before this test existed. So every 400 the upload endpoint can produce
+    must be matched by the page's translation table.
+    """
+    import re
+
+    page = client.get("/").text
+    needles = re.findall(r'\["([^"]+)",\s*"', page)
+    assert needles, "the client's upload-error table was not found"
+
+    provoke = {
+        "no flight id anywhere": (b"x | 2026-10-28T08:00:00Z | op | c | t\n", None),
+        "only comments": (b"# nothing here\n", "f"),
+        "empty file": (b"  \n", "f"),
+        "not utf-8": ("שלום | x".encode("cp1255"), "f"),
+        "too large": (b"a" * (5 * 1024 * 1024 + 1), "f"),
+    }
+    for label, (content, flight_id) in provoke.items():
+        response = upload(client, content, flight_id=flight_id)
+        assert response.status_code == 400, label
+        detail = str(response.json()["detail"])
+        assert any(needle in detail for needle in needles), (
+            f"{label}: the client cannot translate {detail!r}"
+        )
