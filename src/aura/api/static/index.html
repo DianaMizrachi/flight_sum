@@ -97,6 +97,29 @@
   .msg .why { font-size: 11.5px; color: var(--bad); margin-top: 3px; }
   .empty { color: var(--dim); font-size: 13.5px; padding: 18px 2px; text-align: center; }
 
+  .card.full { grid-column: 1 / -1; }
+  .fix-intro { color: var(--dim); font-size: 13px; margin: -6px 0 14px; }
+  .fix-bulk { display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+              padding: 10px 12px; background: var(--panel-2); border: 1px solid var(--line);
+              border-radius: 9px; margin-bottom: 14px; font-size: 13px; }
+  .fix-bulk > span { color: var(--dim); white-space: nowrap; }
+  .fix-bulk > select { width: auto; }
+  .fix-bulk > input { flex: 1; min-width: 190px; }
+  .fix-bulk > button { width: auto; white-space: nowrap; }
+  .fix-rows { display: grid; gap: 8px; }
+  .fix-row { display: grid; gap: 8px; align-items: start;
+             grid-template-columns: 54px 182px 128px 108px 1fr auto;
+             padding: 9px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel-2); }
+  @media (max-width: 1050px) { .fix-row { grid-template-columns: 1fr 1fr; } }
+  .fix-row .ln { font-family: var(--mono); font-size: 12px; color: var(--dim); padding-top: 10px; }
+  .fix-row input { padding: 7px 9px; font-size: 13.5px; }
+  .fix-row input.need { border-color: var(--warn);
+                        background: color-mix(in srgb, var(--warn) 11%, var(--panel-2)); }
+  .fix-row input.need::placeholder { color: var(--warn); opacity: .85; }
+  .fix-row > button { width: auto; padding: 7px 12px; font-size: 13.5px; }
+  .fix-row.done { opacity: .5; }
+  .fix-row .rowerr { grid-column: 1 / -1; color: var(--bad); font-size: 12px; }
+  .fix-foot { display: flex; gap: 10px; align-items: center; margin-top: 14px; flex-wrap: wrap; }
   .drop { border: 1.5px dashed var(--line); border-radius: 9px; padding: 14px;
           text-align: center; font-size: 13px; color: var(--dim); background: var(--panel-2); }
   .drop.over { border-color: var(--accent); color: var(--text); }
@@ -177,6 +200,30 @@
 
     <button class="primary" id="send">שלח משפט</button>
     <div class="hint"><kbd>Ctrl</kbd> + <kbd>Enter</kbd> שולח מתוך תיבת הטקסט</div>
+  </div>
+
+  <div class="card full" id="fix-card" style="display:none">
+    <h2>שורות שצריכות השלמה <span id="fix-count" class="mono" style="text-transform:none"></span></h2>
+    <p class="fix-intro">
+      השורות האלה נדחו כי חסרים בהן נתונים. השדות החסרים מסומנים —
+      מלא אותם ושלח. מה שתשלים כאן נקלט כמשפט רגיל.
+    </p>
+    <div class="fix-bulk">
+      <span>השלמה לכל השורות החסרות:</span>
+      <select id="bulk-field">
+        <option value="source">דובר / מקור</option>
+        <option value="channel">ערוץ</option>
+        <option value="timestamp">זמן</option>
+      </select>
+      <input id="bulk-value" placeholder="הערך שיוחל על כל השורות שבהן השדה חסר" autocomplete="off">
+      <button id="bulk-apply" type="button">החל</button>
+    </div>
+    <div class="fix-rows" id="fix-rows"></div>
+    <div class="fix-foot">
+      <button id="fix-send-all" class="primary" style="width:auto">שלח את כל השורות המושלמות</button>
+      <button id="fix-clear" type="button" style="width:auto">נקה את הרשימה</button>
+      <span class="hint" id="fix-status" style="margin:0"></span>
+    </div>
   </div>
 
   <div class="card">
@@ -327,9 +374,12 @@ async function send() {
         `<div class="sub">לא נכנס שוב לעיבוד. שינוי הזמן או הטקסט יהפוך אותו להודעה חדשה.</div>`);
     } else {
       const reason = d.dead_letter?.reason;
-      rejected.unshift({ ...payload, reason });
+      rejected.unshift({ ...payload, reason, __key: repairSeq + 1 });
+      queueRepair(flight, { ...payload, metadata: {} }, reason);
+      renderRepairs();
       say("bad", `<b>נדחה — ${esc(REASONS[reason] || reason)}.</b>` +
-        `<div class="sub">ההודעה נרשמה בלוג הדחיות עם הסיבה, ולא נכנסה למאגר.</div>`);
+        `<div class="sub">נרשם בלוג הדחיות עם הסיבה. אפשר להשלים את החסר ולשלוח ` +
+        `מהטבלה "שורות שצריכות השלמה" שלמטה.</div>`);
     }
     await loadFlights();
     await loadFeed();
@@ -409,20 +459,182 @@ async function upload(file) {
       return;
     }
     $("flight").value = d.report.flight_id;
+    const bad = d.results.filter((x) => x.dead_letter);
     say("ok", `<b>${esc(file.name)}</b> נקלט לטיסה <span class="mono">${esc(d.report.flight_id)}</span>` +
-      `<div class="sub">נקלטו ${d.accepted_count} · כפילויות ${d.duplicate_count} · נדחו ${d.dead_letter_count}</div>`);
-    d.results.filter((x) => x.dead_letter).forEach((x) => {
+      `<div class="sub">נקלטו ${d.accepted_count} · כפילויות ${d.duplicate_count} · נדחו ${d.dead_letter_count}` +
+      (bad.length ? ` — אפשר להשלים אותן בטבלה שלמטה` : "") + `</div>`);
+    bad.forEach((x) => {
       const raw = x.dead_letter.raw_payload || {};
+      queueRepair(d.report.flight_id, raw, x.dead_letter.reason);
       rejected.unshift({ flight_id: d.report.flight_id, timestamp: raw.timestamp,
                          source: raw.source, channel: raw.channel, text: raw.text,
-                         id: raw.id, reason: x.dead_letter.reason });
+                         id: raw.id, reason: x.dead_letter.reason, __key: repairSeq });
     });
+    renderRepairs();
     await loadFlights();
     await loadFeed();
   } catch (e) {
     say("bad", `<b>ההעלאה נכשלה.</b><div class="sub">${esc(e.message)}</div>`);
   }
 }
+
+// --- השלמת שורות חסרות ---------------------------------------------------
+// שורה שנדחתה אינה נכנסת למאגר, ולכן אין מאיפה לשלוף אותה מחדש. התור
+// הזה מחזיק אותה בדף עם מה שכן היה בה, כדי שאפשר יהיה להשלים את החסר
+// ולשלוח - במקום לתקן את הקובץ ולהעלות הכול שוב.
+let repairs = [];
+let repairSeq = 0;
+
+const REQUIRED = ["timestamp", "source", "text"];
+
+function queueRepair(flightId, raw, reason) {
+  repairs.push({
+    key: ++repairSeq,
+    line: raw?.metadata?.source_line ?? null,
+    reason,
+    flight_id: flightId,
+    id: raw?.id ?? "",
+    timestamp: raw?.timestamp ?? "",
+    source: raw?.source ?? "",
+    channel: raw?.channel ?? "",
+    // טקסט שכולו רווחים נחשב חסר: זה בדיוק מה שהקליטה דחתה.
+    text: (raw?.text ?? "").trim() ? raw.text : "",
+    sent: false,
+    error: null,
+  });
+}
+
+function missingFields(item) {
+  return REQUIRED.filter((f) => !String(item[f] ?? "").trim());
+}
+
+function renderRepairs() {
+  const open = repairs.filter((r) => !r.sent);
+  $("fix-card").style.display = open.length ? "block" : "none";
+  $("fix-count").textContent = open.length ? `· ${open.length}` : "";
+  if (!open.length) { $("fix-rows").innerHTML = ""; return; }
+
+  $("fix-rows").innerHTML = open.map((r) => {
+    const need = missingFields(r);
+    const cell = (field, placeholder, type) => {
+      const flag = need.includes(field) ? " need" : "";
+      return `<input class="r-${field}${flag}" data-key="${r.key}" data-field="${field}"
+        value="${esc(r[field])}" placeholder="${esc(placeholder)}"
+        autocomplete="off"${type ? ` type="${type}"` : ""}>`;
+    };
+    return `<div class="fix-row" data-key="${r.key}">
+      <div class="ln">${r.line ? "שורה " + r.line : "—"}</div>
+      ${cell("timestamp", "זמן UTC — חסר")}
+      ${cell("source", "דובר — חסר")}
+      ${cell("channel", "ערוץ")}
+      ${cell("text", "המשפט — חסר")}
+      <button data-send="${r.key}" type="button">שלח</button>
+      ${r.error ? `<div class="rowerr">${esc(r.error)}</div>` : ""}
+    </div>`;
+  }).join("");
+
+  $("fix-rows").querySelectorAll("input").forEach((el) => {
+    el.oninput = () => {
+      const item = repairs.find((r) => r.key === Number(el.dataset.key));
+      if (!item) return;
+      item[el.dataset.field] = el.value;
+      el.classList.toggle("need", REQUIRED.includes(el.dataset.field) && !el.value.trim());
+    };
+  });
+  $("fix-rows").querySelectorAll("button[data-send]").forEach((el) => {
+    el.onclick = () => sendRepair(Number(el.dataset.send));
+  });
+}
+
+async function sendRepair(key) {
+  const item = repairs.find((r) => r.key === key);
+  if (!item || item.sent) return;
+
+  const need = missingFields(item);
+  if (need.length) {
+    item.error = "עוד חסר: " + need.map((f) =>
+      ({ timestamp: "זמן", source: "דובר", text: "המשפט" })[f]).join(", ");
+    renderRepairs();
+    return false;
+  }
+
+  const payload = {
+    flight_id: item.flight_id,
+    timestamp: item.timestamp.trim(),
+    source: item.source.trim(),
+    text: item.text,
+  };
+  if (item.channel.trim()) payload.channel = item.channel.trim();
+  // המזהה המקורי נשלח רק אם היה - אחרת הקליטה תגזור אותו מ-hash.
+  if (item.id) payload.id = item.id;
+
+  try {
+    const r = await fetch("/messages", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const d = await r.json();
+    if (d.status === "dead_letter") {
+      const reason = d.dead_letter?.reason;
+      item.error = "נדחה שוב — " + (REASONS[reason] || reason);
+      renderRepairs();
+      return false;
+    }
+    item.sent = true;
+    item.error = null;
+    // השורה כבר לא דחויה - להסיר אותה מהתמלים המסומנים במסך.
+    rejected = rejected.filter((x) => x.__key !== key);
+    renderRepairs();
+    return true;
+  } catch (e) {
+    item.error = "השליחה נכשלה: " + e.message;
+    renderRepairs();
+    return false;
+  }
+}
+
+$("fix-send-all").onclick = async () => {
+  const open = repairs.filter((r) => !r.sent);
+  const ready = open.filter((r) => !missingFields(r).length);
+  if (!ready.length) {
+    $("fix-status").textContent = "אין שורה שהושלמה במלואה.";
+    renderRepairs();
+    return;
+  }
+  $("fix-send-all").disabled = true;
+  let ok = 0;
+  for (const item of ready) {
+    if (await sendRepair(item.key)) ok += 1;
+  }
+  $("fix-send-all").disabled = false;
+  const left = repairs.filter((r) => !r.sent).length;
+  $("fix-status").textContent =
+    `נקלטו ${ok}` + (left ? ` · ${left} עוד מחכות להשלמה` : " · הרשימה נוקתה");
+  await loadFlights();
+  await loadFeed();
+};
+
+$("bulk-apply").onclick = () => {
+  const field = $("bulk-field").value;
+  const value = $("bulk-value").value.trim();
+  if (!value) { $("bulk-value").focus(); return; }
+  let touched = 0;
+  // ממלא רק מה שחסר - לא דורס ערך שכבר הגיע מהקובץ.
+  repairs.filter((r) => !r.sent).forEach((r) => {
+    if (!String(r[field] ?? "").trim()) { r[field] = value; touched += 1; }
+  });
+  $("fix-status").textContent = touched
+    ? `הושלמו ${touched} שורות בשדה הזה.`
+    : "לא נמצאה שורה שבה השדה הזה חסר.";
+  renderRepairs();
+};
+
+$("fix-clear").onclick = () => {
+  repairs = repairs.filter((r) => r.sent);
+  $("fix-status").textContent = "";
+  renderRepairs();
+};
 
 $("send").onclick = send;
 $("now-btn").onclick = () => { $("ts").value = nowUTC(); };

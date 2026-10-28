@@ -574,3 +574,83 @@ def test_client_translates_every_upload_error_the_api_can_return(client):
         assert any(needle in detail for needle in needles), (
             f"{label}: the client cannot translate {detail!r}"
         )
+
+
+# --- completing a rejected line ----------------------------------------
+
+INCOMPLETE_FILE = (
+    "# flight_id: repair-01\n"
+    "r-m01 | 2026-10-28T13:00:00Z | operator | command | בקרה, קשר עם מטרה אלפא.\n"
+    "r-m02 | 2026-10-28T13:00:40Z |          | command | בקרה, המטרה נעה מזרחה.\n"
+    "r-m03 |                      | operator | command | בקרה, איבדנו קשר.\n"
+    "r-m04 | 2026-10-28T13:02:00Z | operator | command |\n"
+).encode()
+
+
+def test_rejected_line_keeps_every_field_it_did_have(client):
+    """The client offers to fill in what a rejected line is missing, and it
+    can only pre-fill the rest from the dead-letter record. If raw_payload
+    ever stopped carrying the partial fields, the repair form would quietly
+    render empty rows and the user would retype work the file already had."""
+    body = upload(client, INCOMPLETE_FILE, "incomplete.txt").json()
+    rejected = [r["dead_letter"] for r in body["results"] if r["dead_letter"]]
+    assert len(rejected) == 3
+
+    by_id = {record["raw_payload"].get("id"): record for record in rejected}
+
+    missing_source = by_id["r-m02"]["raw_payload"]
+    assert missing_source["timestamp"] == "2026-10-28T13:00:40Z"
+    assert missing_source["text"] == "בקרה, המטרה נעה מזרחה."
+    assert not missing_source.get("source")
+
+    missing_time = by_id["r-m03"]["raw_payload"]
+    assert missing_time["source"] == "operator"
+    assert missing_time["text"] == "בקרה, איבדנו קשר."
+    assert not missing_time.get("timestamp")
+
+    missing_text = by_id["r-m04"]["raw_payload"]
+    assert missing_text["timestamp"] and missing_text["source"]
+    assert not missing_text["text"].strip()
+
+
+def test_rejected_line_reports_which_line_of_the_file_it_was(client):
+    body = upload(client, INCOMPLETE_FILE, "incomplete.txt").json()
+    lines = [
+        r["dead_letter"]["raw_payload"]["metadata"]["source_line"]
+        for r in body["results"]
+        if r["dead_letter"]
+    ]
+    assert lines == ["3", "4", "5"]
+
+
+def test_completing_a_rejected_line_is_accepted_and_keeps_its_id(client):
+    """The round trip the repair button performs."""
+    upload(client, INCOMPLETE_FILE, "incomplete.txt")
+
+    completed = client.post(
+        "/messages",
+        json={
+            "flight_id": "repair-01",
+            "id": "r-m04",
+            "timestamp": "2026-10-28T13:02:00Z",
+            "source": "operator",
+            "channel": "command",
+            "text": "בקרה, נץ אחת, חוזרים למסד.",
+        },
+    )
+    assert completed.status_code == 201
+    assert completed.json()["status"] == "accepted"
+    assert completed.json()["message"]["id"] == "r-m04"
+
+    texts = [m["text"] for m in client.get("/flights/repair-01/messages").json()]
+    assert "בקרה, נץ אחת, חוזרים למסד." in texts
+
+
+def test_a_line_still_missing_a_field_is_rejected_again_with_the_reason(client):
+    """Partially completing a row must not sneak it through."""
+    response = client.post(
+        "/messages",
+        json={"flight_id": "repair-01", "id": "r-m03", "source": "operator", "text": "בקרה."},
+    )
+    assert response.json()["status"] == "dead_letter"
+    assert response.json()["dead_letter"]["reason"] == "missing_required_field"
