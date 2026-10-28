@@ -1,0 +1,145 @@
+# תרחיש הערכה 2 מתוך 3 - עברית קשה (3 דקות).
+#
+# מטרה: להפריד בין מודל שאומן על עברית לבין מודל רב-לשוני שעברית היא
+# אצלו שפה שולית. כל מה שמופיע כאן הוא מה שבאמת מגיע מערוץ קשר אחרי
+# תמלול אוטומטי, ולא מה שנוח למודל:
+#
+#   1. חוסר פיסוק מלא ומשפטי רצף (m01, m05) - תמלול ASR לא מפסק.
+#   2. מספרים במילים, לא בספרות (m01, m07).
+#   3. שלילה שנושאת את האירוע (m04: "שלילי, אין לי קשר") - מודל שמתעלם
+#      מהשלילה יסמן קשר במקום אובדן קשר. זו המלכודת המרכזית כאן.
+#   4. שאלה שמנוסחת כמו דיווח (m03) - אסור שתפיק אירוע.
+#   5. סמיכות ומונחים מקצועיים ("המצלמה האלקטרו-אופטית", "החיישן התרמי").
+#
+# הציפייה: פער בולט לטובת מודל עברי דווקא ב-m01, m04 ו-m05.
+
+scenario_id: eval-02
+flight_id: eval-02
+title_he: "עברית קשה - תמלול ללא פיסוק, שלילה, ומספרים במילים"
+duration_seconds: 175
+focus_he: "עמידות לעברית של ערוץ קשר אמיתי, ובייחוד לשלילה"
+expected_event_count: 3
+
+messages:
+  - id: eval-02-m01
+    flight_id: eval-02
+    timestamp: "2026-10-28T09:00:00Z"
+    ingested_at: "2026-10-28T09:00:00Z"
+    source: operator
+    channel: command
+    text: "בקרה נץ שלוש אנחנו בגזרה הדרומית גובה אלף ושש מאות רגל ממשיכים בסריקה"
+
+  - id: eval-02-m02
+    flight_id: eval-02
+    timestamp: "2026-10-28T09:00:25Z"
+    ingested_at: "2026-10-28T09:00:25Z"
+    source: operator
+    channel: command
+    text: "בקרה, זיהוי חזותי של שני בני אדם ליד מבנה מספר ארבע, אחד מהם נושא תיק."
+
+  - id: eval-02-m03
+    flight_id: eval-02
+    timestamp: "2026-10-28T09:00:55Z"
+    ingested_at: "2026-10-28T09:00:55Z"
+    source: ops
+    channel: command
+    text: "נץ שלוש, בקרה, האם יש לך קשר רצוף עם החשודים ליד המבנה?"
+
+  - id: eval-02-m04
+    flight_id: eval-02
+    timestamp: "2026-10-28T09:01:10Z"
+    ingested_at: "2026-10-28T09:01:10Z"
+    source: operator
+    channel: command
+    text: "שלילי בקרה, אין לי קשר רצוף, הם מוסתרים על ידי צמחייה."
+
+  - id: eval-02-m05
+    flight_id: eval-02
+    timestamp: "2026-10-28T09:01:50Z"
+    ingested_at: "2026-10-28T09:01:50Z"
+    source: operator
+    channel: command
+    text: "בקרה המצלמה האלקטרו אופטית לא מגיבה לפקודות הזזה עוברים לחיישן התרמי"
+
+  - id: eval-02-m06
+    flight_id: eval-02
+    timestamp: "2026-10-28T09:02:20Z"
+    ingested_at: "2026-10-28T09:02:20Z"
+    source: ops
+    channel: command
+    text: "מאשר, נץ שלוש, עדכן כשתהיה תמונה."
+
+  - id: eval-02-m07
+    flight_id: eval-02
+    timestamp: "2026-10-28T09:02:55Z"
+    ingested_at: "2026-10-28T09:02:55Z"
+    source: operator
+    channel: command
+    text: "בקרה, בחיישן התרמי יש תמונה, שני החשודים נעים מזרחה, טווח ארבע מאות וחמישים מטר."
+
+expected_events:
+  - key: visual-identification
+    type: contact_with_target
+    relation_to_previous: new
+    source_ids: [eval-02-m02]
+    entities:
+      - type: target
+        label: "שני חשודים ליד מבנה ארבע"
+    new_info_he: "זיהוי חזותי של שני בני אדם ליד מבנה ארבע, אחד נושא תיק."
+    confidence_min: 0.7
+    notes_he: >
+      תווית הישות היא טקסט חופשי - ההשוואה צריכה להיות סלחנית לנוסח
+      ("שני חשודים", "שני בני אדם ליד מבנה ארבע") ונוקשה לסוג ולמספר.
+
+  - key: contact-not-continuous
+    type: loss_of_contact
+    relation_to_previous: updates
+    source_ids: [eval-02-m04]
+    entities:
+      - type: target
+        label: "שני חשודים ליד מבנה ארבע"
+    new_info_he: "אין קשר רצוף עם החשודים, מוסתרים על ידי צמחייה."
+    confidence_min: 0.7
+    notes_he: >
+      המלכודת המרכזית של התרחיש. "שלילי ... אין לי קשר רצוף" הוא אובדן
+      קשר. מודל שמפיק כאן contact_with_target הפך את משמעות המשפט.
+
+  - key: eo-camera-malfunction
+    type: malfunction
+    relation_to_previous: new
+    source_ids: [eval-02-m05]
+    entities:
+      - type: force
+        label: "נץ שלוש"
+    new_info_he: >
+      המצלמה האלקטרו-אופטית אינה מגיבה לפקודות הזזה, מעבר לחיישן התרמי.
+    confidence_min: 0.7
+    notes_he: >
+      המשפט ללא פיסוק ומכיל שני חלקים (תקלה + מעבר לחיישן חלופי).
+      לפי הטקסונומיה malfunction דורש גם entities וגם new_info.
+
+optional_events:
+  - key: thermal-contact-regained
+    type: contact_with_target
+    relation_to_previous: updates
+    source_ids: [eval-02-m07]
+    entities:
+      - type: target
+        label: "שני חשודים ליד מבנה ארבע"
+    new_info_he: "בחיישן התרמי יש תמונה, החשודים נעים מזרחה, טווח 450 מטר."
+    reason_optional_he: >
+      חידוש הקשר בחיישן התרמי הוא לגיטימי כאירוע נפרד, אבל מודל שרואה
+      אותו כהמשך של m05 ולא כאירוע חדש אינו טועה. לא נספר כשגיאה לשום
+      כיוון - נרשם בנפרד כדי לראות איך כל מודל מחליט.
+
+must_not_produce_events:
+  - message_id: eval-02-m01
+    reason_he: >
+      דיווח מיקום וגובה שגרתי. אין לו סוג בטקסונומיה, ולכן הוא בודק
+      שהמודל לא ממציא אירוע רק כי הגיע משפט.
+  - message_id: eval-02-m03
+    reason_he: >
+      שאלה מהבקרה, לא דיווח. מודל שמסיק ממנה קשר עם מטרה ענה על
+      הנוסח ולא על התוכן.
+  - message_id: eval-02-m06
+    reason_he: "אישור קליטה והוראת המתנה."

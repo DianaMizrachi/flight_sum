@@ -1,0 +1,122 @@
+# תרחיש הערכה 1 מתוך 3 - בסיס נקי (3 דקות).
+#
+# מטרה: רצפת הביצועים. עברית תקנית, פיסוק מלא, מונחים ישר מהטקסונומיה.
+# מודל שנכשל כאן לא כדאי להמשיך לבדוק אותו - אין כאן שום מלכודת.
+# שימושי בעיקר כדי להפריד "המודל לא מבין עברית" מ-"המודל לא מבין את
+# המשימה": אם eval-01 עובר ו-eval-02 נכשל, הבעיה היא עברית; אם eval-01
+# עובר ו-eval-03 נכשל, הבעיה היא ייחוס מקורות.
+
+scenario_id: eval-01
+flight_id: eval-01
+title_he: "בסיס נקי - קשר עם מטרה, אובדן וחידוש"
+duration_seconds: 180
+focus_he: "זיהוי בסיסי של שלושה אירועים ברצף, ללא מלכודות"
+expected_event_count: 4
+
+messages:
+  - id: eval-01-m01
+    flight_id: eval-01
+    timestamp: "2026-10-28T08:00:00Z"
+    ingested_at: "2026-10-28T08:00:00Z"
+    source: ops
+    channel: command
+    text: "נץ אחת, בקרה, דווח מצב."
+
+  - id: eval-01-m02
+    flight_id: eval-01
+    timestamp: "2026-10-28T08:00:12Z"
+    ingested_at: "2026-10-28T08:00:12Z"
+    source: operator
+    channel: command
+    text: "בקרה, נץ אחת, יש לנו קשר עם מטרה אלפא, טווח שני קילומטר, נעה מזרחה."
+
+  - id: eval-01-m03
+    flight_id: eval-01
+    timestamp: "2026-10-28T08:00:30Z"
+    ingested_at: "2026-10-28T08:00:30Z"
+    source: ops
+    channel: command
+    text: "מאשר, המשך מעקב."
+
+  - id: eval-01-m04
+    flight_id: eval-01
+    timestamp: "2026-10-28T08:01:20Z"
+    ingested_at: "2026-10-28T08:01:20Z"
+    source: operator
+    channel: command
+    text: "בקרה, איבדנו קשר עם מטרה אלפא, נכנסה לחורשה."
+
+  - id: eval-01-m05
+    flight_id: eval-01
+    timestamp: "2026-10-28T08:02:05Z"
+    ingested_at: "2026-10-28T08:02:05Z"
+    source: operator
+    channel: command
+    text: "בקרה, חידשנו קשר עם מטרה אלפא, יצאה מהחורשה בכיוון צפון."
+
+  - id: eval-01-m06
+    flight_id: eval-01
+    timestamp: "2026-10-28T08:02:40Z"
+    ingested_at: "2026-10-28T08:02:40Z"
+    source: ops
+    channel: command
+    text: "מאשר נץ אחת, רישום - קשר עם מטרה אלפא חודש."
+
+  - id: eval-01-m07
+    flight_id: eval-01
+    timestamp: "2026-10-28T08:03:00Z"
+    ingested_at: "2026-10-28T08:03:00Z"
+    source: operator
+    channel: command
+    text: "בקרה, מטרה אלפא עולה על רכב לבן, ממשיכה בכיוון צפון."
+
+expected_events:
+  - key: contact-initial
+    type: contact_with_target
+    relation_to_previous: new
+    source_ids: [eval-01-m02]
+    entities:
+      - type: target
+        label: "מטרה אלפא"
+    new_info_he: "קשר עם מטרה אלפא, טווח שני קילומטר, נעה מזרחה."
+    confidence_min: 0.8
+
+  - key: contact-lost
+    type: loss_of_contact
+    relation_to_previous: updates
+    source_ids: [eval-01-m04]
+    entities:
+      - type: target
+        label: "מטרה אלפא"
+    new_info_he: "אבד הקשר עם מטרה אלפא, נכנסה לחורשה."
+    confidence_min: 0.8
+
+  - key: contact-regained
+    type: contact_with_target
+    relation_to_previous: updates
+    source_ids: [eval-01-m05]
+    entities:
+      - type: target
+        label: "מטרה אלפא"
+    new_info_he: "הקשר עם מטרה אלפא חודש, יצאה מהחורשה בכיוון צפון."
+    confidence_min: 0.8
+
+  - key: contact-vehicle
+    type: contact_with_target
+    relation_to_previous: updates
+    source_ids: [eval-01-m07]
+    entities:
+      - type: target
+        label: "מטרה אלפא"
+    new_info_he: "מטרה אלפא עלתה על רכב לבן וממשיכה צפונה."
+    confidence_min: 0.7
+
+must_not_produce_events:
+  - message_id: eval-01-m01
+    reason_he: "שאילתת מצב מהבקרה, לא דיווח על אירוע."
+  - message_id: eval-01-m03
+    reason_he: "אישור קליטה בלבד."
+  - message_id: eval-01-m06
+    reason_he: >
+      אישור שחוזר על תוכן m05. אירוע שמצביע על m06 הוא ספירה כפולה של
+      חידוש הקשר.

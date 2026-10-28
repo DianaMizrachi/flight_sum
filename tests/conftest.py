@@ -6,6 +6,7 @@ import yaml
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 GOLDEN_FLIGHTS_DIR = FIXTURES_DIR / "golden_flights"
 EDGE_CASES_DIR = FIXTURES_DIR / "edge_cases"
+MODEL_EVAL_DIR = FIXTURES_DIR / "model_eval"
 
 
 def load_yaml(path: Path) -> dict:
@@ -25,3 +26,13 @@ def golden_flight_paths() -> list[Path]:
 @pytest.fixture
 def edge_case_path(request) -> Path:
     return EDGE_CASES_DIR / request.param
+
+
+@pytest.fixture(params=sorted(MODEL_EVAL_DIR.glob("*.yaml")), ids=lambda p: p.stem)
+def model_eval_scenario(request) -> dict:
+    return load_yaml(request.param)
+
+
+@pytest.fixture
+def model_eval_paths() -> list[Path]:
+    return sorted(MODEL_EVAL_DIR.glob("*.yaml"))

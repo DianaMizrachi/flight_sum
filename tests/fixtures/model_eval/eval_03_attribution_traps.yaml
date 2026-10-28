@@ -1,0 +1,160 @@
+# תרחיש הערכה 3 מתוך 3 - ייחוס מקורות (3 דקות).
+#
+# מטרה: קריטריון המעבר של שלב 4 הוא "כל אירוע מצביע על משפטי המקור
+# הנכונים" (>=90%). התרחיש הזה בודק בדיוק את זה, ולא את זיהוי האירועים:
+#
+#   1. אירוע שנפרס על שני משפטים (m01+m02) - source_ids חייב להכיל את
+#      שניהם. מודל שמחזיר רק אחד מהם נכשל בייחוס גם אם סוג האירוע נכון.
+#   2. אישור שחוזר על התוכן (m03) - ספירה כפולה. זו השגיאה הנפוצה
+#      ביותר בתמלול דו-כיווני, כי התוכן זהה לחלוטין לדיווח שקדם לו.
+#   3. הוראה מותנית (m04: "אם תאבד קשר ... עבור") - עדיין לא קרה דבר.
+#      לא אובדן קשר ולא שינוי משימה.
+#   4. שינוי משימה שמשתמע ממנו גם סגירת מעקב (m07) - שני אירועים
+#      לגיטימיים מאותו משפט, ושניהם מצביעים על m07.
+#   5. ביצוע ההוראה (m08) - לא אירוע נוסף.
+#
+# הערה על חלונות: m01 ו-m02 מרוחקים תשע שניות ולכן ייפלו באותו חלון,
+# אבל m03 הוא החלפת דובר. עם close_on_speaker_change=True החלון ייסגר
+# ביניהם, ואז המודל יראה את האישור בלי הדיווח שהוא מאשר - בדיוק המצב
+# שבו ספירה כפולה הופכת בלתי נמנעת. התרחיש הזה מודד גם את ההחלטה הזו.
+
+scenario_id: eval-03
+flight_id: eval-03
+title_he: "מלכודות ייחוס - אירוע על שני משפטים, אישורים והוראות מותנות"
+duration_seconds: 180
+focus_he: "נכונות source_ids וספירה כפולה, לא זיהוי אירועים"
+expected_event_count: 3
+
+messages:
+  - id: eval-03-m01
+    flight_id: eval-03
+    timestamp: "2026-10-28T10:00:00Z"
+    ingested_at: "2026-10-28T10:00:00Z"
+    source: operator
+    channel: command
+    text: "בקרה, נץ חמש, יש לנו תנועה חשודה בצומת המזרחי."
+
+  - id: eval-03-m02
+    flight_id: eval-03
+    timestamp: "2026-10-28T10:00:09Z"
+    ingested_at: "2026-10-28T10:00:09Z"
+    source: operator
+    channel: command
+    text: "מדובר ברכב מסחרי כסוף, שני נוסעים, עוצר בשול הדרך."
+
+  - id: eval-03-m03
+    flight_id: eval-03
+    timestamp: "2026-10-28T10:00:30Z"
+    ingested_at: "2026-10-28T10:00:30Z"
+    source: ops
+    channel: command
+    text: "מאשר, נץ חמש, קשר עם רכב מסחרי כסוף בצומת המזרחי - רשמתי."
+
+  - id: eval-03-m04
+    flight_id: eval-03
+    timestamp: "2026-10-28T10:01:05Z"
+    ingested_at: "2026-10-28T10:01:05Z"
+    source: ops
+    channel: command
+    text: "נץ חמש, שים לב - אם תאבד קשר עם הרכב, עבור מיד לסריקת הצירים היוצאים מהצומת."
+
+  - id: eval-03-m05
+    flight_id: eval-03
+    timestamp: "2026-10-28T10:01:15Z"
+    ingested_at: "2026-10-28T10:01:15Z"
+    source: operator
+    channel: command
+    text: "מאשר בקרה, הבנתי."
+
+  - id: eval-03-m06
+    flight_id: eval-03
+    timestamp: "2026-10-28T10:02:00Z"
+    ingested_at: "2026-10-28T10:02:00Z"
+    source: operator
+    channel: command
+    text: "בקרה, הרכב המסחרי יצא מהצומת מזרחה, אנחנו ממשיכים אחריו."
+
+  - id: eval-03-m07
+    flight_id: eval-03
+    timestamp: "2026-10-28T10:02:35Z"
+    ingested_at: "2026-10-28T10:02:35Z"
+    source: ops
+    channel: command
+    text: "נץ חמש, בקרה, הפסק מעקב אחרי הרכב, עבור לגזרה הצפונית, יש דיווח על תנועה שם."
+
+  - id: eval-03-m08
+    flight_id: eval-03
+    timestamp: "2026-10-28T10:03:00Z"
+    ingested_at: "2026-10-28T10:03:00Z"
+    source: operator
+    channel: command
+    text: "מאשר, מפסיקים מעקב, פונים לגזרה הצפונית."
+
+expected_events:
+  - key: suspicious-vehicle-contact
+    type: contact_with_target
+    relation_to_previous: new
+    source_ids: [eval-03-m01, eval-03-m02]
+    entities:
+      - type: target
+        label: "רכב מסחרי כסוף"
+    new_info_he: >
+      תנועה חשודה בצומת המזרחי - רכב מסחרי כסוף עם שני נוסעים, עוצר בשול.
+    confidence_min: 0.7
+    notes_he: >
+      שני המשפטים הם אירוע אחד: m01 מדווח על התנועה ו-m02 מזהה מה היא.
+      source_ids חייב להכיל את שניהם. אם המודל מפיק שני אירועים נפרדים,
+      זו שגיאת פירוק - נרשמת בנפרד משגיאת ייחוס.
+
+  - key: vehicle-leaves-junction
+    type: contact_with_target
+    relation_to_previous: updates
+    source_ids: [eval-03-m06]
+    entities:
+      - type: target
+        label: "רכב מסחרי כסוף"
+    new_info_he: "הרכב המסחרי יצא מהצומת מזרחה, המעקב נמשך."
+    confidence_min: 0.7
+
+  - key: mission-change-north
+    type: mission_change
+    relation_to_previous: new
+    source_ids: [eval-03-m07]
+    entities:
+      - type: area
+        label: "הגזרה הצפונית"
+    new_info_he: >
+      הוראת בקרה - הפסקת המעקב אחרי הרכב ומעבר לגזרה הצפונית בעקבות
+      דיווח על תנועה.
+    confidence_min: 0.7
+
+optional_events:
+  - key: vehicle-tracking-closed
+    type: contact_with_target
+    relation_to_previous: closes
+    source_ids: [eval-03-m07]
+    entities:
+      - type: target
+        label: "רכב מסחרי כסוף"
+    new_info_he: "המעקב אחרי הרכב המסחרי הופסק לפי הוראת בקרה."
+    reason_optional_he: >
+      m07 נושא שני אירועים: שינוי משימה וסגירת המעקב. אירוע סגירה נוסף
+      שמצביע על m07 הוא נכון ואף מועדף למצב המשימה, ולכן אינו נספר
+      כשגיאה - אבל גם היעדרו אינו שגיאה בשלב 4, כי שלב 6 יכול להסיק
+      את הסגירה משינוי המשימה.
+
+must_not_produce_events:
+  - message_id: eval-03-m03
+    reason_he: >
+      אישור שחוזר על תוכן m01+m02 במילים אחרות. אירוע שמצביע על m03
+      הוא ספירה כפולה של אותו קשר - השגיאה המרכזית שהתרחיש מחפש.
+  - message_id: eval-03-m04
+    reason_he: >
+      הוראה מותנית. לא אבד קשר ולא שונתה משימה - שניהם עדיין לא קרו.
+      מודל שמפיק כאן loss_of_contact או mission_change קרא תנאי כעובדה.
+  - message_id: eval-03-m05
+    reason_he: "אישור קליטה."
+  - message_id: eval-03-m08
+    reason_he: >
+      ביצוע ההוראה מ-m07, לא אירוע נוסף. שינוי המשימה נספר פעם אחת
+      בלבד, במשפט שבו הוא ניתן.
