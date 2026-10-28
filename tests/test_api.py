@@ -355,30 +355,66 @@ def test_status_does_not_fail_when_ollama_is_unreachable(client, monkeypatch):
     assert body["llm"]["available_models"] == []
 
 
-def test_dashboard_is_served_at_the_root(client):
+def test_client_page_is_served_at_the_root(client):
+    """`/` is the operator's page: entering sentences, not system internals."""
     response = client.get("/")
     assert response.status_code == 200
     assert "text/html" in response.headers["content-type"]
     assert "aura" in response.text
 
 
-def test_dashboard_only_calls_endpoints_that_exist(client):
-    """The page is plain JS with hard-coded paths; a renamed endpoint would
-    otherwise break it silently and only in a browser."""
+def test_root_is_the_client_and_not_the_ops_dashboard(client):
+    """The two pages serve different readers. Work-plan stages, component
+    tables and token budgets belong on /ops, never on the page someone uses
+    to log a sentence during a debrief."""
+    page = client.get("/").text
+    for developer_only in ("stages_built", "components", "window_settings", "/status"):
+        assert developer_only not in page, f"{developer_only!r} leaked into the client page"
+
+
+def test_ops_dashboard_is_served_separately(client):
+    response = client.get("/ops")
+    assert response.status_code == 200
+    assert "stages_built" in response.text or "/status" in response.text
+
+
+@pytest.mark.parametrize("page_path", ["/", "/ops"])
+def test_pages_only_call_endpoints_that_exist(client, page_path):
+    """Both pages are plain JS with hard-coded paths; a renamed endpoint
+    would otherwise break them silently, in a browser, and only for the
+    person using the page.
+
+    Matching against the published spec rather than issuing the requests
+    keeps this method-agnostic: /messages/upload is POST-only, and a GET
+    probe would report it missing when it is not.
+    """
     import re
 
-    page = client.get("/").text
-    paths = set(re.findall(r'api\("(/[^"?]*)', page)) | set(
-        re.findall(r'api\(`(/[^`?$]*)', page)
-    )
-    assert "/status" in paths
-    for path in paths:
-        assert client.get(path).status_code == 200, f"dashboard calls missing {path}"
+    page = client.get(page_path).text
+    # הדפים קוראים ל-API גם דרך עוטף api() וגם דרך fetch ישיר, ובשלושה
+    # סוגי מרכאות - החילוץ חייב לכסות את כולם, אחרת הבדיקה "עוברת" בלי
+    # לבדוק דבר.
+    called = set()
+    for call in re.findall(r"""(?:api|fetch)\(\s*["`']([^"`']+)""", page):
+        if call.startswith("/"):
+            called.add(re.sub(r"\$\{[^}]*\}", "X", call).split("?")[0])
+    assert called, "a page with no API calls would make this test vacuous"
+
+    documented = [
+        re.compile("^" + re.sub(r"\\\{[^}]*\\\}", "[^/]+", re.escape(spec_path)) + "$")
+        for spec_path in client.get("/openapi.json").json()["paths"]
+    ]
+    for path in sorted(called):
+        assert any(pattern.match(path) for pattern in documented), (
+            f"{page_path} calls {path}, which is not in the API"
+        )
 
 
-def test_dashboard_is_excluded_from_the_openapi_spec(client):
-    """The spec documents the API; the page that consumes it is not part of it."""
-    assert "/" not in client.get("/openapi.json").json()["paths"]
+def test_pages_are_excluded_from_the_openapi_spec(client):
+    """The spec documents the API; the pages that consume it are not part of it."""
+    paths = client.get("/openapi.json").json()["paths"]
+    assert "/" not in paths
+    assert "/ops" not in paths
 
 
 # --- file upload --------------------------------------------------------

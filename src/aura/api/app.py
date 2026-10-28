@@ -68,7 +68,11 @@ MAX_UPLOAD_BYTES = 5 * 1024 * 1024
 IMPLEMENTED_STAGES = [0, 1, 2, 3, 4]
 
 STATIC_DIR = PathLib(__file__).parent / "static"
-DASHBOARD_FILE = STATIC_DIR / "index.html"
+# שני דפים, לשני קוראים שונים: ``/`` הוא הקליינט של המשתמש - הזנת
+# משפטים וצפייה בתמלול. ``/ops`` הוא תמונת המצב של המערכת, שאין לה
+# מה לעשות על המסך של מי שמזין תמלול.
+CLIENT_FILE = STATIC_DIR / "index.html"
+OPS_FILE = STATIC_DIR / "ops.html"
 
 # סטטוס הקליטה -> קוד HTTP. dead-letter הוא 422: ההודעה נרשמה עם סיבה,
 # אבל המקור צריך לדעת שהיא לא תיכנס לניתוח.
@@ -366,13 +370,14 @@ def system_status(
     return build_status(store, service, API_VERSION, resolved_store_path())
 
 
-@app_router.get(
-    "/",
-    include_in_schema=False,
-    summary="דשבורד מצב המערכת",
-)
-def dashboard() -> FileResponse:
-    return FileResponse(DASHBOARD_FILE, media_type="text/html")
+@app_router.get("/", include_in_schema=False, summary="קליינט הזנת תמלול")
+def client_page() -> FileResponse:
+    return FileResponse(CLIENT_FILE, media_type="text/html")
+
+
+@app_router.get("/ops", include_in_schema=False, summary="מצב המערכת")
+def ops_page() -> FileResponse:
+    return FileResponse(OPS_FILE, media_type="text/html")
 
 
 def create_app() -> FastAPI:
