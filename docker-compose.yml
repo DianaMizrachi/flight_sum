@@ -1,12 +1,21 @@
-# סביבת הרצה מקומית לשלב 0 (שלב 0, משימה 6): מסד נתונים, תור, ומודל LLM
-# מקומי. כל הרכיבים עצמם (קליטה, בניית הקשר וכו') עדיין לא רצים כשירותים
+# סביבת הרצה מקומית לשלב 0 (שלב 0, משימה 6): מסד נתונים ותור.
+# כל הרכיבים עצמם (קליטה, בניית הקשר וכו') עדיין לא רצים כשירותים
 # נפרדים - הם מתחברים לתשתית הזו משלב 1 ואילך.
 #
-# הרצת מודל מקומי (ollama) דורשת nvidia-container-toolkit על המארח כדי
-# שה-GPU יהיה חשוף לקונטיינר. אחרי `docker compose up -d ollama`:
-#   docker compose exec ollama ollama pull qwen2.5:14b-instruct-q4_K_M
-# (מודל התחלתי מועמד - להחליף בקלות דרך שכבת הלקוח המופשטת של רכיב 4
-# אם מודל ממוקד-עברית, כמו DictaLM, ייתן תוצאות טובות יותר בהערכה).
+# מודל ה-LLM אינו כאן בכוונה. ollama רץ על המארח ולא בקונטיינר:
+#
+#   1. שירות ollama בקומפוז פרסם את פורט 11434, אותו פורט שבו ollama
+#      המותקן על המארח כבר מאזין - כלומר התנגשות ודאית ברגע שהשירות עולה.
+#   2. חשיפת GPU לקונטיינר דורשת nvidia-container-toolkit, ואין בה צורך
+#      כשההתקנה המקומית עובדת.
+#
+# התקנה והרצה על המארח:
+#   ollama serve                                   # בדרך כלל כבר רץ כשירות
+#   ollama pull hf.co/dicta-il/DictaLM-3.0-Nemotron-12B-Instruct-GGUF:Q4_K_M
+#
+# כתובת השירות נקבעת ב-``LLMConfig.base_url`` (ברירת מחדל
+# http://localhost:11434), ולכן מודל שרץ על מכונה אחרת הוא שינוי הגדרה
+# ולא שינוי קוד.
 
 services:
   postgres:
@@ -35,20 +44,5 @@ services:
       timeout: 5s
       retries: 10
 
-  ollama:
-    image: ollama/ollama:latest
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama-data:/root/.ollama
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: ["gpu"]
-
 volumes:
   postgres-data:
-  ollama-data:

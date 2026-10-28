@@ -59,6 +59,36 @@ class TokenBudgetConfig(BaseModel):
     )
 
 
+class LLMConfig(BaseModel):
+    """הגדרות מנוע ה-LLM (רכיב 4). ollama רץ על המארח, לא בקונטיינר."""
+
+    model: str = Field(
+        default="hf.co/dicta-il/DictaLM-3.0-Nemotron-12B-Instruct-GGUF:Q4_K_M",
+        description=(
+            "PLACEHOLDER - נבחר בהשוואה של tests/fixtures/model_eval. ברירת המחדל "
+            "היא הדגם שנכנס ל-16GB VRAM עם מרווח ל-KV cache."
+        ),
+    )
+    base_url: str = Field(default="http://localhost:11434")
+    timeout_seconds: float = Field(
+        default=120.0,
+        description="מודל מקומי בטעינה ראשונה אטי; הבדיקה של שלב 4 כוללת timeout",
+    )
+    temperature: float = Field(
+        default=0.0, description="דטרמיניסטי: השוואת מודלים חייבת להיות ניתנת לשחזור"
+    )
+    keep_alive: str = Field(
+        default="10m", description="כמה זמן ollama משאיר את המודל טעון בין קריאות"
+    )
+    num_ctx: int = Field(
+        default=8192,
+        description=(
+            "חלון ההקשר שollama מקצה. חייב להיות גדול מתקציב הטוקנים של רכיב 3 "
+            "בתוספת ההנחיות והפלט."
+        ),
+    )
+
+
 class ReconcilerConfig(BaseModel):
     window_minutes: int = Field(default=7, description="PLAN DEFAULT (range is 5-10 minutes)")
 
@@ -67,6 +97,7 @@ class Settings(BaseModel):
     window: WindowConfig = Field(default_factory=WindowConfig)
     flight_end: FlightEndConfig = Field(default_factory=FlightEndConfig)
     token_budget: TokenBudgetConfig = Field(default_factory=TokenBudgetConfig)
+    llm: LLMConfig = Field(default_factory=LLMConfig)
     reconciler: ReconcilerConfig = Field(default_factory=ReconcilerConfig)
 
 
