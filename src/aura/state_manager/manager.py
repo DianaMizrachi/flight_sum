@@ -69,6 +69,22 @@ _RELATION_TO_KIND = {
 }
 
 
+def certainty_for(confidence: float, settings: Settings | None = None) -> CertaintyLevel:
+    """מתרגם ציון ביטחון של המודל לרמת ודאות של המערכת.
+
+    ברמת המודול ולא בתוך המנהל, כי שירות השאילתות (שלב 9) חייב לסנן
+    לפי *אותה* רמת ודאות שנכתבה למצב. אם המיפוי היה מופיע בשני
+    מקומות, שינוי סף אחד היה גורם לשאילתה להחזיר אירוע כ"מאומת"
+    בעוד שבמצב הוא נרשם כ"מדווח" - שתי תשובות לאותה שאלה.
+    """
+    thresholds = (settings if settings is not None else DEFAULT_SETTINGS).state
+    if confidence >= thresholds.verified_confidence:
+        return CertaintyLevel.VERIFIED
+    if confidence >= thresholds.reported_confidence:
+        return CertaintyLevel.REPORTED
+    return CertaintyLevel.UNCERTAIN
+
+
 @dataclass
 class StateUpdate:
     """תוצאת עיבוד אצווה אחת של אירועים (רכיב 6, פלט).
@@ -335,12 +351,7 @@ class MissionStateManager:
         return definition.state_attribute
 
     def _certainty_for(self, confidence: float) -> CertaintyLevel:
-        thresholds = self.settings.state
-        if confidence >= thresholds.verified_confidence:
-            return CertaintyLevel.VERIFIED
-        if confidence >= thresholds.reported_confidence:
-            return CertaintyLevel.REPORTED
-        return CertaintyLevel.UNCERTAIN
+        return certainty_for(confidence, self.settings)
 
     def _change(
         self,

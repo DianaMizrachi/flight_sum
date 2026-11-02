@@ -326,6 +326,18 @@ class SQLiteEventStore:
         )
         return [row["flight_id"] for row in rows]
 
+    def versions_of(self, flight_id: str) -> list[VersionTag]:
+        """אילו גרסאות קיימות לטיסה הזו בפועל.
+
+        שאלת כן/לא שאין סיבה לשלם עליה בטעינת ציר זמן שלם: שירות
+        השאילתות (שלב 9) בוחר גרסה לפני כל שאילתה, ולכן זו הקריאה
+        התכופה ביותר במערכת.
+        """
+        rows = self._connection.execute(
+            "SELECT DISTINCT version FROM events WHERE flight_id = ?", (flight_id,)
+        )
+        return [VersionTag(row["version"]) for row in rows]
+
     def count_events(self, flight_id: str | None = None) -> int:
         if flight_id is None:
             row = self._connection.execute("SELECT COUNT(*) AS n FROM events").fetchone()

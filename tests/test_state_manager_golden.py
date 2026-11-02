@@ -30,8 +30,6 @@ Closing that gap is a contract change (an ``attributes`` field on
 
 from datetime import datetime
 
-import pytest
-
 from aura.schemas import (
     ContextBundle,
     EntityStatus,
@@ -206,25 +204,29 @@ def test_the_checkpoints_expect_attributes_the_event_contract_cannot_carry(golde
     )
 
 
-@pytest.mark.parametrize("checkpoint_index", [0])
-def test_an_earlier_checkpoint_is_reachable_by_replaying_part_of_the_flight(
-    golden_flight, checkpoint_index
-):
-    """מצב בנקודת זמן, לא רק בסוף - ההבטחה ששלב 7 בנוי עליה."""
-    checkpoint = golden_flight["checkpoints"][checkpoint_index]
-    cutoff = datetime.fromisoformat(checkpoint["timestamp"])
+def test_every_checkpoint_is_reachable_by_replaying_part_of_the_flight(golden_flight):
+    """מצב בנקודת זמן, לא רק בסוף - ההבטחה ששלב 7 בנוי עליה.
+
+    נבדק מול *כל* נקודות הבדיקה. כשרק הראשונה נבדקה, נקודת אמצע
+    שהשמיטה ישות פעילה עברה בלי שהושם לב - ראו ההערה בראש
+    ``flight_03_malfunction_and_handoff.yaml``.
+    """
     validated, _ = run_flight(golden_flight)
     times = message_times(golden_flight)
 
-    until_cutoff = [
-        event
-        for event in validated.accepted
-        if min(times[sid] for sid in event.source_ids) <= cutoff
-    ]
-    update = MissionStateManager().apply(until_cutoff, message_times=times)
+    for checkpoint in golden_flight["checkpoints"]:
+        cutoff = datetime.fromisoformat(checkpoint["timestamp"])
+        until_cutoff = [
+            event
+            for event in validated.accepted
+            if min(times[sid] for sid in event.source_ids) <= cutoff
+        ]
+        update = MissionStateManager().apply(until_cutoff, message_times=times)
 
-    expected = {
-        entity_key(raw["type"], raw["label"])
-        for raw in checkpoint["state"]["entities"].values()
-    }
-    assert set(by_label(update.state)) == expected
+        expected = {
+            entity_key(raw["type"], raw["label"])
+            for raw in checkpoint["state"]["entities"].values()
+        }
+        assert set(by_label(update.state)) == expected, (
+            f"{golden_flight['flight_id']} at {checkpoint['at_message_id']}"
+        )

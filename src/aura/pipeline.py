@@ -135,7 +135,11 @@ class FlightPipeline:
         # בלי תקצירים.
         self.summarizer = summarizer
         self.states: dict[str, MissionState] = {}
-        self._message_times: dict[str, Any] = {}
+        # זמני אמירה *לפי טיסה*. מזהה משפט ייחודי בתוך הטיסה ולא במאגר
+        # כולו - זו הסיבה שהמפתח הראשי של המאגר הגולמי הוא (טיסה, מזהה)
+        # - ולכן מילון שטוח אחד היה מאפשר ל-"m01" של טיסה אחת לדרוס את
+        # זה של השנייה, ולסדר אירועים לפי זמן של טיסה אחרת.
+        self._message_times: dict[str, dict[str, Any]] = {}
 
     # --- component 1 ------------------------------------------------------
 
@@ -155,7 +159,7 @@ class FlightPipeline:
         בלעדיו הוא נופל לזמן העיבוד, והודעה שאחרה נראית כאילו נאמרה
         עכשיו - בדיוק מה שהיא לא.
         """
-        self._message_times[message.id] = message.timestamp
+        self._message_times.setdefault(message.flight_id, {})[message.id] = message.timestamp
 
     # --- components 3→6 ---------------------------------------------------
 
@@ -191,15 +195,28 @@ class FlightPipeline:
         return highlights_for(
             self.event_store.events_for_flight(flight_id),
             self.states.get(flight_id),
-            self._message_times,
+            self.times_of(flight_id),
         )
 
+    def times_of(self, flight_id: str) -> dict[str, Any]:
+        """זמני האמירה של משפטי טיסה אחת."""
+        return self._message_times.get(flight_id, {})
+
     def finish_flight(self, flight_id: str) -> Summary | None:
-        """סוף טיסה: תקציר אחרון ללא תנאי, גם אם הסף לא נחצה."""
+        """סוף טיסה: תקציר אחרון ללא תנאי, גם אם הסף לא נחצה.
+
+        מסומן במשפט האחרון שנקלט בטיסה. בלי זה התקציר היחיד שמכסה את
+        הטיסה כולה הוא גם היחיד שאינו מצהיר עד היכן הוא מגיע, ושאילתת
+        "התקציר עד נקודת זמן" (שלב 9) אינה יכולה למקם אותו.
+        """
         state = self.states.get(flight_id)
         if self.summarizer is None or state is None:
             return None
-        return self.summarizer.summarize(flight_id, state, SummaryTrigger.POST_FLIGHT)
+        times = self.times_of(flight_id)
+        last = max(times, key=lambda mid: (times[mid], mid)) if times else None
+        return self.summarizer.summarize(
+            flight_id, state, SummaryTrigger.POST_FLIGHT, covers_up_to_message_id=last
+        )
 
     def _process(self, windows: list) -> PipelineRun:
         run = PipelineRun()
@@ -263,6 +280,8 @@ class FlightPipeline:
         if state is None:
             state = self.state_manager.empty_state(flight_id)
             self.states[flight_id] = state
-        update = self.state_manager.apply(events, state, message_times=self._message_times)
+        update = self.state_manager.apply(
+            events, state, message_times=self.times_of(flight_id)
+        )
         self.states[flight_id] = update.state
         return update

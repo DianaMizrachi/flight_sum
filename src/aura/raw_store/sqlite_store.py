@@ -176,6 +176,20 @@ class SQLiteRawTranscriptStore:
         sql += " ORDER BY timestamp, id"
         return [self._to_message(row) for row in self._query(sql, tuple(params))]
 
+    def timestamps_for_flight(self, flight_id: str) -> dict[str, datetime]:
+        """מזהה משפט -> זמן האמירה, לכל משפטי הטיסה.
+
+        קיימת בנפרד מ-``by_flight`` כי שירות השאילתות (שלב 9) צריך רק
+        את הזמנים, ולא את ההודעות: אירוע נושא ``created_at`` שהוא זמן
+        *העיבוד*, ולכן כל סינון לפי טווח זמן חייב לתרגם מזהי מקור לזמן
+        אמירה. בניית אובייקט ``Message`` מאומת לכל שורה בטיסה ארוכה היא
+        רוב העלות של אותה שאילתה, וכאן אין בה צורך.
+        """
+        rows = self._query(
+            "SELECT id, timestamp FROM raw_messages WHERE flight_id = ?", (flight_id,)
+        )
+        return {row["id"]: datetime.fromisoformat(row["timestamp"]) for row in rows}
+
     def count(self, flight_id: str | None = None) -> int:
         if flight_id is None:
             rows = self._query("SELECT COUNT(*) AS n FROM raw_messages")

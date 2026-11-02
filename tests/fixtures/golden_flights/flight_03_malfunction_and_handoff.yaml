@@ -189,6 +189,11 @@ messages:
     expected:
       has_event: false
 
+# נקודת בדיקה היא מצב המשימה *במלואו* באותו רגע, ולא רק הישות שהיא
+# עוסקת בה. נץ שלוש נוצר ב-m03 ואף אירוע אינו סוגר אותו, ולכן הוא פעיל
+# גם בנקודות שעוסקות במטרה גמא - וההשמטה שלו שם הייתה פער בפיקסצ'ר,
+# שנמצא כששירות השאילתות (שלב 9) נבדק מול *כל* נקודות הבדיקה ולא רק
+# מול הראשונה והאחרונה.
 checkpoints:
   - label: "אחרי דיווח התקלה"
     at_message_id: flight-03-m03
@@ -236,6 +241,23 @@ checkpoints:
     timestamp: "2026-09-03T11:21:30Z"
     state:
       entities:
+        force-netz3:
+          id: force-netz3
+          type: force
+          label: "נץ שלוש"
+          status: active
+          attributes:
+            sensor_status:
+              current:
+                value: "חיישן חילופי פעיל, תקין"
+                source_event_id: "flight-03-evt-flight-03-m05"
+                certainty: reported
+                updated_at: "2026-09-03T11:09:00Z"
+              history:
+                - value: "תקלה: אובדן חדות תמונה EO"
+                  source_event_id: "flight-03-evt-flight-03-m03"
+                  certainty: reported
+                  updated_at: "2026-09-03T11:08:00Z"
         target-gamma:
           id: target-gamma
           type: target
@@ -260,6 +282,23 @@ checkpoints:
     timestamp: "2026-09-03T11:22:10Z"
     state:
       entities:
+        force-netz3:
+          id: force-netz3
+          type: force
+          label: "נץ שלוש"
+          status: active
+          attributes:
+            sensor_status:
+              current:
+                value: "חיישן חילופי פעיל, תקין"
+                source_event_id: "flight-03-evt-flight-03-m05"
+                certainty: reported
+                updated_at: "2026-09-03T11:09:00Z"
+              history:
+                - value: "תקלה: אובדן חדות תמונה EO"
+                  source_event_id: "flight-03-evt-flight-03-m03"
+                  certainty: reported
+                  updated_at: "2026-09-03T11:08:00Z"
         target-gamma:
           id: target-gamma
           type: target
