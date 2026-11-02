@@ -31,6 +31,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
 
+from aura.query_service.errors import require_aware
 from aura.schemas import CertaintyLevel
 from aura.state_manager.entities import normalize_label
 
@@ -65,6 +66,15 @@ class EventFilter:
     certainty: frozenset[CertaintyLevel] | None = None
     relations: frozenset[str] | None = None
     limit: int | None = None
+
+    def __post_init__(self) -> None:
+        """גבולות הטווח נבדקים כאן, במקום שבו הערך נכנס.
+
+        בדיקה בתוך השאילתה הייתה מצביעה על השורה שמשווה זמנים, ולא על
+        השורה שבנתה את המסנן - והשנייה היא זו שצריך לתקן.
+        """
+        require_aware(self.start, "start")
+        require_aware(self.end, "end")
 
     @classmethod
     def build(

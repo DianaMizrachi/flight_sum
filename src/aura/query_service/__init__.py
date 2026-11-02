@@ -1,5 +1,10 @@
 """רכיב 9 - שירות שאילתות ותחקור (שלב 9)."""
 
+from aura.query_service.errors import (
+    NaiveDatetimeError,
+    QueryError,
+    SummariesUnavailableError,
+)
 from aura.query_service.filters import CERTAINTY_ORDER, EventFilter, at_least
 from aura.query_service.models import (
     AttributeValue,
@@ -13,11 +18,7 @@ from aura.query_service.models import (
     TimelineEntry,
     VersionDiff,
 )
-from aura.query_service.service import (
-    QueryError,
-    QueryService,
-    SummariesUnavailableError,
-)
+from aura.query_service.service import QueryService
 
 __all__ = [
     "CERTAINTY_ORDER",
@@ -27,6 +28,7 @@ __all__ = [
     "EntityView",
     "EventFilter",
     "EventPair",
+    "NaiveDatetimeError",
     "QueryError",
     "QueryService",
     "SourceSentence",

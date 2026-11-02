@@ -23,6 +23,7 @@ from golden_stores import load_flight
 from aura.event_store.store import SQLiteEventStore
 from aura.query_service import (
     EventFilter,
+    NaiveDatetimeError,
     QueryService,
     SummariesUnavailableError,
     at_least,
@@ -37,8 +38,11 @@ from aura.schemas import (
     InfoRelation,
     Message,
     ReconciliationAction,
+    Summary,
+    SummaryTrigger,
     VersionTag,
 )
+from aura.summarizer.store import SQLiteSummaryStore
 
 
 @pytest.fixture
@@ -844,3 +848,108 @@ def test_an_unknown_flight_answers_empty_rather_than_failing(service):
     assert service.timeline("no-such-flight") == []
     assert service.current_state("no-such-flight").entities == ()
     assert service.version_diff("no-such-flight").final_exists is False
+
+# --- a time without a timezone -------------------------------------------
+
+
+NAIVE = datetime(2026, 9, 1, 6, 20)  # noqa: DTZ001 - that is the point
+
+
+def test_a_time_without_a_timezone_is_refused_by_every_query(loaded, service):
+    """שאלה מעורפלת אינה נענית בניחוש.
+
+    לפני הבדיקה הזו אותה טעות התנהגה בשלוש דרכים: ``state_at`` החזיר
+    מצב שגוי בשקט (``astimezone`` על זמן חסר אזור מניח את שעת המכונה,
+    ולכן נקודת החיתוך זזה לפי ההיסט של השרת), ושתי האחרות קרסו
+    ב-``TypeError`` מתוך המיון. אחת מהן - התשובה הבטוחה-למראה - היא
+    הגרועה מכולן.
+    """
+    with pytest.raises(NaiveDatetimeError):
+        service.state_at(loaded.flight_id, NAIVE)
+    with pytest.raises(NaiveDatetimeError):
+        service.summary(loaded.flight_id, at=NAIVE)
+    with pytest.raises(NaiveDatetimeError):
+        service.sentences_of_flight(loaded.flight_id, start=NAIVE)
+    with pytest.raises(NaiveDatetimeError):
+        EventFilter.build(end=NAIVE)
+
+
+def test_the_filter_refuses_the_bad_value_where_it_was_built(loaded):
+    """השגיאה מצביעה על בניית המסנן, לא על השורה שמשווה זמנים."""
+    with pytest.raises(NaiveDatetimeError) as raised:
+        EventFilter(start=NAIVE)
+    assert raised.value.field == "start"
+    assert "no timezone" in str(raised.value)
+
+
+def test_the_refusal_is_an_input_error_not_a_server_fault(loaded, service):
+    """שלב 10 יתפוס אותה כ-400 בלי להכיר את היררכיית השגיאות."""
+    assert issubclass(NaiveDatetimeError, ValueError)
+    with pytest.raises(ValueError, match="no timezone"):
+        service.state_at(loaded.flight_id, NAIVE)
+
+
+def test_no_bound_at_all_is_still_allowed(loaded, service):
+    """``None`` אינו זמן מעורפל - הוא "בלי גבול"."""
+    assert EventFilter.build(start=None, end=None).empty is True
+    assert service.summary(loaded.flight_id, at=None) is not None
+    assert service.sentences_of_flight(loaded.flight_id)
+
+
+# --- answers that are empty rather than errors ---------------------------
+
+
+def test_an_unknown_event_has_no_sources_which_is_how_you_know(loaded, service):
+    """רשימה ריקה כאן יכולה להיות רק "אין אירוע כזה".
+
+    ``Event.source_ids`` מוגדר ``min_length=1``, ולכן אירוע שמור *תמיד*
+    מצביע על משפט אחד לפחות - ואין מצב שני שבו התשובה ריקה.
+    """
+    assert service.sources_of("no-such-event", loaded.flight_id) == []
+    assert service.events_from_sentence("no-such-sentence", loaded.flight_id) == []
+
+# --- summaries follow the version the events chose -----------------------
+
+
+def test_the_version_is_chosen_from_the_events_not_the_summaries(reconciled):
+    """הגרסה נקבעת ממאגר האירועים, כי האירועים הם החומר.
+
+    התקצירים נגזרים מהם, ולכן לא הם שקובעים איזו גרסה מוצגת.
+    """
+    assert reconciled.resolve_version("flight-r") is VersionTag.FINAL
+
+
+def test_a_final_flight_without_a_final_summary_has_no_summary(reconciled_with_summaries):
+    """צימוד שחייב להישאר הדוק, והוא חוזה כלפי שלב 11.
+
+    לטיסה יש אירועים בגרסה הסופית אבל תקציר רק בגרסת זמן האמת. התשובה
+    היא ש*אין* תקציר סופי - ולא נפילה לאחור לטיוטה. הצגת תקציר זמן אמת
+    לצד אירועים סופיים הייתה בדיוק הבלבול שסימון הגרסאות נועד למנוע,
+    והוא מופיע בטבלת הסיכונים שבתכנית.
+
+    המשמעות המעשית: מעבר התיקון חייב לכתוב גם תקציר סופי, לא רק
+    אירועים סופיים.
+    """
+    service = reconciled_with_summaries
+    assert service.resolve_version("flight-r") is VersionTag.FINAL
+    assert service.summary("flight-r") is None
+    assert service.summary("flight-r", version=VersionTag.REALTIME) is not None
+
+
+@pytest.fixture
+def reconciled_with_summaries(reconciled):
+    """אותה טיסה מתוקנת, עם תקציר בגרסת זמן האמת בלבד."""
+    summaries = SQLiteSummaryStore(":memory:")
+    summaries.save(
+        Summary(
+            flight_id="flight-r",
+            version=VersionTag.REALTIME,
+            version_number=1,
+            text="תקציר זמן אמת",
+            trigger_reason=SummaryTrigger.POST_FLIGHT,
+            covers_up_to_message_id="m01",
+            created_at=base_time(),
+        )
+    )
+    yield QueryService(reconciled.events, reconciled.raw, summaries)
+    summaries.close()

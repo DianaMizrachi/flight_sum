@@ -40,6 +40,12 @@ from datetime import datetime
 
 from aura.config import DEFAULT_SETTINGS, Settings
 from aura.event_store.store import SQLiteEventStore
+from aura.query_service.errors import (
+    NaiveDatetimeError,
+    QueryError,
+    SummariesUnavailableError,
+    require_aware,
+)
 from aura.query_service.filters import EventFilter
 from aura.query_service.models import (
     AttributeValue,
@@ -65,18 +71,14 @@ from aura.schemas import (
 from aura.state_manager.manager import certainty_for
 from aura.summarizer.store import SQLiteSummaryStore
 
-
-class QueryError(RuntimeError):
-    """בסיס לשגיאות שירות השאילתות."""
-
-
-class SummariesUnavailableError(QueryError):
-    """שאילתת תקציר כשמאגר התקצירים אינו מחובר.
-
-    נפרד מ"אין תקצירים לטיסה": הראשון הוא תצורה חסרה והשני הוא תשובה
-    תקפה. אם שניהם היו מוחזרים כ-``None``, קורא שראה טיסה בלי תקציר לא
-    היה יכול לדעת אם הטיסה שקטה או שהרכיב כלל אינו רץ.
-    """
+# השגיאות מוגדרות ב-``errors.py`` ומיוצאות מכאן, כדי שגם המסנן וגם
+# השירות יוכלו להעלות אותן בלי תלות מעגלית ביניהם.
+__all__ = [
+    "NaiveDatetimeError",
+    "QueryError",
+    "QueryService",
+    "SummariesUnavailableError",
+]
 
 
 class QueryService:
@@ -118,6 +120,11 @@ class QueryService:
         """
         if requested is not None:
             return requested
+        # הגרסה נקבעת ממאגר *האירועים*: הם החומר, והתקצירים נגזרים מהם.
+        # לכן טיסה שיש לה אירועים סופיים בלי תקציר סופי מחזירה "אין
+        # תקציר" ולא נופלת לאחור לטיוטה - הצגת תקציר זמן אמת לצד
+        # אירועים סופיים היא בדיוק הבלבול שסימון הגרסאות מונע. מכאן
+        # נובע חוזה כלפי שלב 11: מעבר התיקון כותב גם תקציר סופי.
         if VersionTag.FINAL in self.events.versions_of(flight_id):
             return VersionTag.FINAL
         return VersionTag.REALTIME
@@ -151,6 +158,7 @@ class QueryService:
         ``at`` הוא זמן אמירה, ורצף שינויי המצב כבר מתוייג בזמן אמירה
         (``applied_at``), ולכן השחזור כאן הוא השוואה ישרה.
         """
+        require_aware(at, "at")
         resolved = self.resolve_version(flight_id, version)
         state = self.events.rebuild_state(flight_id, resolved, until=at)
         return self._state_view(state, rebuilt=True, as_of=at)
@@ -242,6 +250,8 @@ class QueryService:
         self, flight_id: str, start: datetime | None = None, end: datetime | None = None
     ) -> list[SourceSentence]:
         """התמלול עצמו, לטווח זמן. מה שהקורא רואה כשהוא פותח אירוע בהקשר."""
+        require_aware(start, "start")
+        require_aware(end, "end")
         messages = self.raw.by_time_range(flight_id, start, end)
         return [
             SourceSentence(
@@ -271,6 +281,7 @@ class QueryService:
         כזו: אי אפשר למקם אותו בזמן אמירה, והנחה לטובתו הייתה מציגה
         ידע מאוחר כאילו היה קיים.
         """
+        require_aware(at, "at")
         store = self._summary_store()
         resolved = self.resolve_version(flight_id, version)
         times = self.raw.timestamps_for_flight(flight_id)
