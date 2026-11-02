@@ -46,8 +46,9 @@ from aura.ingestion import (
     IngestResult,
     parse_transcript_text,
 )
+from aura.ingestion.fixture_transcripts import looks_like_fixture_yaml, parse_fixture_upload
 from aura.ingestion.queue import InMemoryQueue
-from aura.raw_store import RawTranscriptStore
+from aura.raw_store import AmbiguousMessageIdError, RawTranscriptStore
 from aura.schemas import Message, MessageStatus
 
 try:
@@ -185,7 +186,10 @@ def ingest_batch(
     responses={
         status.HTTP_400_BAD_REQUEST: {
             "model": ErrorResponse,
-            "description": "אין מזהה טיסה, הקובץ ריק, אינו UTF-8, או גדול מהתקרה",
+            "description": (
+                "אין מזהה טיסה, הקובץ ריק, אינו UTF-8, גדול מהתקרה, "
+                "או שאינו קובץ תמלול - אף שורה בו אינה מחזיקה את חמשת השדות"
+            ),
         }
     },
 )
@@ -225,7 +229,19 @@ async def upload_transcript(
             detail=f"file is not valid UTF-8 (byte {exc.start}); Hebrew text must be UTF-8 encoded",
         ) from exc
 
-    parsed = parse_transcript_text(text, flight_id=flight_id, source_name=file.filename)
+    # שני פורמטים, קורא אחד לכל אחד, ומשם מסלול קליטה אחד. פיקסצ'ר ה-YAML
+    # של הפרויקט הוא קובץ שמשתמש בוחר בפועל (הוא זה שמחזיק את המשפטים
+    # המתוייגים), ולכן הוא נקרא כאן ולא נדחה כ"לא תמלול".
+    if looks_like_fixture_yaml(text, file.filename):
+        try:
+            parsed = parse_fixture_upload(text, flight_id=flight_id, source_name=file.filename)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"not a usable fixture: {exc}",
+            ) from exc
+    else:
+        parsed = parse_transcript_text(text, flight_id=flight_id, source_name=file.filename)
     if not parsed.flight_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -240,6 +256,20 @@ async def upload_transcript(
             detail=(
                 f"no message lines found in {parsed.total_lines} lines; expected "
                 "'message_id | timestamp | source | channel | text'"
+            ),
+        )
+    # קובץ שבו *אף* שורה אינה מחזיקה את חמשת השדות אינו תמלול, אלא קובץ
+    # אחר שנבחר בטעות - למשל פיקסצ'ר ה-YAML שממנו נוצר קובץ התמלול.
+    # בלי הבדיקה הזו כל שורה בו הייתה נרשמת ל-dead-letter בנפרד, והמשתמש
+    # היה מקבל מאות שורות "להשלמה" במקום לדעת שבחר את הקובץ הלא נכון.
+    # שורה תקינה אחת מספיקה כדי שהקובץ ייחשב תמלול: קובץ אמיתי עם חלק
+    # מהשורות פגומות ממשיך להיקלט, והפגומות מגיעות ל-dead-letter כרגיל.
+    if len(parsed.short_lines) == parsed.message_count:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"not a transcript: none of the {parsed.message_count} message lines "
+                "has the five fields 'message_id | timestamp | source | channel | text'"
             ),
         )
 
@@ -303,14 +333,34 @@ def get_flight_transcript(
     "/messages/{message_id}",
     response_model=Message,
     summary="משפט בודד לפי מזהה",
-    responses={status.HTTP_404_NOT_FOUND: {"model": ErrorResponse, "description": "אין הודעה כזו"}},
+    responses={
+        status.HTTP_404_NOT_FOUND: {"model": ErrorResponse, "description": "אין הודעה כזו"},
+        status.HTTP_409_CONFLICT: {
+            "model": ErrorResponse,
+            "description": "המזהה קיים בכמה טיסות - יש לחזור עם `flight_id`",
+        },
+    },
 )
 def get_message(
-    message_id: str = Path(description="מזהה ההודעה"),
+    message_id: str = Path(description="מזהה ההודעה, כפי שהמקור שלח אותו"),
+    flight_id: str | None = Query(
+        default=None,
+        description="הטיסה שבה לחפש. בלעדיו החיפוש הוא על פני המאגר, ומזהה "
+        "שקיים בכמה טיסות מחזיר 409",
+    ),
     store: RawTranscriptStore = Depends(get_raw_store),
 ) -> Message:
-    """המשפט כפי שנקלט, ללא שינוי - זו הדרך לחזור מאירוע לתמלול המקורי."""
-    message = store.get(message_id)
+    """המשפט כפי שנקלט, ללא שינוי - זו הדרך לחזור מאירוע לתמלול המקורי.
+
+    המזהה מגיע מהמקור ולכן הוא ייחודי *בתוך הטיסה*: שתי טיסות יכולות
+    שתיהן למנות ``m01``. ``flight_id`` הוא מה שהופך את הצמד למפתח - ולכן
+    חזרה מאירוע לתמלול תעביר את שני השדות (``Event`` מחזיק את שניהם).
+    בלי טיסה, מזהה שקיים ביותר מאחת מחזיר 409 ולא שורה שרירותית.
+    """
+    try:
+        message = store.get(message_id, flight_id=flight_id)
+    except AmbiguousMessageIdError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     if message is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="message not found")
     return message

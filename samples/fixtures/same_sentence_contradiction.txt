@@ -1,0 +1,15 @@
+# aura - מקרה גבול: same_sentence_contradiction
+#
+# נוצר אוטומטית מ-tests/fixtures/edge_cases/same_sentence_contradiction.yaml על ידי scripts/export_fixture_transcripts.py.
+# אין לערוך את הקובץ ישירות - ערכו את הפיקסצ'ר והריצו את הסקריפט מחדש.
+#
+# same-sentence-two-contradicting-events
+#
+# פורמט: message_id | timestamp | source | channel | text
+# 1 שורות הודעה.
+#
+# תוצאה צפויה בהעלאה דרך הקליינט: 1 נקלטות, 0 כפילויות, 0 ל-dead-letter.
+# מזהה הטיסה למטה הוא הנחיה שהקורא מפרש, ולכן אין צורך להקליד אותו.
+# flight_id: flight-edge-04
+
+flight-edge-04-m01 | 2026-09-07T14:00:00Z | operator | command | בקרה, מטרה דלתא.

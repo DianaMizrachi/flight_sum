@@ -8,6 +8,7 @@ append-only, עם שליפה לפי מזהה, טיסה וטווח זמן. האכ
 from aura.raw_store.dedup_index import RawStoreDedupIndex
 from aura.raw_store.sqlite_store import SQLiteRawTranscriptStore
 from aura.raw_store.store import (
+    AmbiguousMessageIdError,
     AppendOnlyViolationError,
     DuplicateMessageError,
     RawStoreError,
@@ -15,6 +16,7 @@ from aura.raw_store.store import (
 )
 
 __all__ = [
+    "AmbiguousMessageIdError",
     "AppendOnlyViolationError",
     "DuplicateMessageError",
     "RawStoreDedupIndex",

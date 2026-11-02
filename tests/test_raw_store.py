@@ -16,6 +16,7 @@ import yaml
 
 from aura.ingestion import IngestionService
 from aura.raw_store import (
+    AmbiguousMessageIdError,
     AppendOnlyViolationError,
     DuplicateMessageError,
     RawStoreDedupIndex,
@@ -255,6 +256,66 @@ def test_appending_the_same_id_twice_is_refused(store: SQLiteRawTranscriptStore)
     assert store.get("f1-m01").text == "בקרה, נץ אחת, הכל תקין."
 
 
+# --- המזהה ייחודי בתוך הטיסה, לא במאגר ----------------------------------
+
+
+def test_the_same_source_id_in_two_flights_is_two_messages(store: SQLiteRawTranscriptStore):
+    """מזהה ההודעה בא מהמקור, והוא מבטיח ייחודיות בתוך הטיסה שלו בלבד.
+
+    זו לא פינה תיאורטית: כל קובץ תמלול שממנה את שורותיו m01, m02 - וזה
+    הפורמט של ``samples/`` - מגיע עם אותם מזהים בכל טיסה.
+    """
+    store.append(message(id="m01", flight_id="f1", text="בקרה, נץ אחת, הכל תקין."))
+    store.append(message(id="m01", flight_id="f2", text="בקרה, נץ שתיים, ממתינים."))
+
+    assert store.count() == 2
+    assert store.get("m01", flight_id="f1").text == "בקרה, נץ אחת, הכל תקין."
+    assert store.get("m01", flight_id="f2").text == "בקרה, נץ שתיים, ממתינים."
+    assert store.exists("m01", flight_id="f2") is True
+    assert store.exists("m01", flight_id="f3") is False
+
+
+def test_an_id_shared_by_two_flights_is_not_resolved_by_guessing(
+    store: SQLiteRawTranscriptStore,
+):
+    """שליפה בלי טיסה נכשלת במקום להחזיר אחת מהשתיים."""
+    store.append(message(id="m01", flight_id="f1"))
+    store.append(message(id="m01", flight_id="f2"))
+
+    with pytest.raises(AmbiguousMessageIdError) as raised:
+        store.get("m01")
+
+    assert raised.value.flights == ["f1", "f2"]
+    assert store.flights_with_message("m01") == ["f1", "f2"]
+    # ``exists`` עונה על שאלה אחרת, שאין בה דו-משמעות.
+    assert store.exists("m01") is True
+
+
+def test_ingesting_the_same_source_id_under_another_flight_is_not_a_duplicate(
+    service: IngestionService, store: SQLiteRawTranscriptStore
+):
+    """הרגרסיה עצמה: רכיב 1 משייך את מפתח הכפילות לטיסה, ולכן הודעה כזו
+    אושרה - ואז המאגר דחה אותה על התנגשות מזהה גלובלית, והקליטה החזירה
+    ``duplicate`` על הודעה שתוכנה חדש לגמרי. כך קובץ תמלול עם מזהים
+    קבועים נקלט פעם אחת בחיי המאגר, ובכל טיסה נוספת חזר ככפילות."""
+    payload = {
+        "id": "m01",
+        "timestamp": "2026-09-01T06:00:00Z",
+        "source": "operator",
+        "text": "בקרה, נץ אחת, הכל תקין.",
+    }
+
+    first = service.ingest({**payload, "flight_id": "f1"})
+    second = service.ingest({**payload, "flight_id": "f2"})
+    again = service.ingest({**payload, "flight_id": "f1"})
+
+    assert first.status == MessageStatus.ACCEPTED
+    assert second.status == MessageStatus.ACCEPTED, "another flight is another message"
+    assert again.status == MessageStatus.DUPLICATE, "the same flight is still a duplicate"
+    assert store.count("f1") == 1
+    assert store.count("f2") == 1
+
+
 def test_a_batch_with_a_duplicate_is_rejected_whole(store: SQLiteRawTranscriptStore):
     store.append(message(id="m1"))
 
@@ -319,10 +380,18 @@ def test_schema_creates_the_three_retrieval_indexes(store: SQLiteRawTranscriptSt
     )
     names = {row["name"] for row in rows}
 
-    assert {"raw_messages_flight_idx", "raw_messages_flight_time_idx"} <= names
-    # ה-PRIMARY KEY של id מייצר אינדקס משלו, כך ששליפה לפי מזהה אינה סריקה.
-    plan = store.execute_sql("EXPLAIN QUERY PLAN SELECT * FROM raw_messages WHERE id = 'x'")
-    assert "SEARCH" in " ".join(str(tuple(row)) for row in plan)
+    assert {"raw_messages_id_idx", "raw_messages_flight_time_idx"} <= names
+
+    def searches(sql: str) -> bool:
+        plan = store.execute_sql(f"EXPLAIN QUERY PLAN {sql}")
+        return "SEARCH" in " ".join(str(tuple(row)) for row in plan)
+
+    # ה-PRIMARY KEY (flight_id, id) מכסה שליפה לפי טיסה ולפי מזהה בתוכה;
+    # המזהה לבדו אינו העמודה השמאלית, ולכן יש לו אינדקס משלו - אחרת
+    # ``get`` בלי טיסה היה סריקה מלאה של המאגר.
+    assert searches("SELECT * FROM raw_messages WHERE flight_id = 'f' AND id = 'x'")
+    assert searches("SELECT * FROM raw_messages WHERE flight_id = 'f'")
+    assert searches("SELECT * FROM raw_messages WHERE id = 'x'")
 
 
 def test_applying_the_schema_twice_is_harmless(tmp_path: Path):
@@ -331,6 +400,138 @@ def test_applying_the_schema_twice_is_harmless(tmp_path: Path):
         first.append(message())
     with SQLiteRawTranscriptStore(db_path) as second:
         assert second.count() == 1
+
+
+# --- מיגרציה של מאגר קיים -----------------------------------------------
+
+# הסכמה כפי שהייתה לפני התיקון, מילה במילה: ``id TEXT PRIMARY KEY``. היא
+# נשמרת כאן כדי שהבדיקות יפתחו מאגר ישן אמיתי ולא יסתמכו על דמה.
+GLOBAL_ID_SCHEMA = """
+CREATE TABLE raw_messages (
+    id                 TEXT PRIMARY KEY,
+    flight_id          TEXT NOT NULL,
+    timestamp          TEXT NOT NULL,
+    ingested_at        TEXT NOT NULL,
+    source             TEXT NOT NULL,
+    channel            TEXT,
+    text               TEXT NOT NULL,
+    language           TEXT NOT NULL,
+    dedup_hash         TEXT,
+    status             TEXT NOT NULL,
+    dead_letter_reason TEXT,
+    metadata           TEXT NOT NULL,
+    stored_at          TEXT NOT NULL
+);
+CREATE INDEX raw_messages_flight_idx ON raw_messages (flight_id);
+CREATE INDEX raw_messages_flight_time_idx ON raw_messages (flight_id, timestamp);
+CREATE INDEX raw_messages_flight_hash_idx ON raw_messages (flight_id, dedup_hash);
+CREATE TRIGGER raw_messages_block_update
+BEFORE UPDATE ON raw_messages
+BEGIN
+    SELECT RAISE(ABORT, 'raw_messages is append-only: UPDATE is blocked');
+END;
+CREATE TRIGGER raw_messages_block_delete
+BEFORE DELETE ON raw_messages
+BEGIN
+    SELECT RAISE(ABORT, 'raw_messages is append-only: DELETE is blocked');
+END;
+CREATE TABLE dedup_keys (
+    key           TEXT PRIMARY KEY,
+    message_id    TEXT NOT NULL,
+    remembered_at TEXT NOT NULL
+);
+"""
+
+LEGACY_PK_TABLE = "raw_messages_global_id_pk"
+
+
+def write_global_id_store(path: Path, rows: list[tuple[str, str, str]]) -> None:
+    """מאגר במבנה הישן, עם ``(id, flight_id, text)`` לכל שורה."""
+    connection = sqlite3.connect(path)
+    connection.executescript(GLOBAL_ID_SCHEMA)
+    for message_id, flight_id, text in rows:
+        connection.execute(
+            "INSERT INTO raw_messages (id, flight_id, timestamp, ingested_at, source, channel, "
+            "text, language, dedup_hash, status, dead_letter_reason, metadata, stored_at) "
+            "VALUES (?, ?, '2026-09-01T06:00:00+00:00', '2026-09-01T06:00:00+00:00', 'operator', "
+            "'command', ?, 'he', 'h', 'accepted', NULL, '{}', '2026-09-01T06:00:00+00:00')",
+            (message_id, flight_id, text),
+        )
+    connection.commit()
+    connection.close()
+
+
+def primary_key_of(store: SQLiteRawTranscriptStore, table: str = "raw_messages") -> list[str]:
+    rows = store.execute_sql(f"PRAGMA table_info({table})")
+    keyed = sorted((row["pk"], row["name"]) for row in rows if row["pk"])
+    return [name for _, name in keyed]
+
+
+def table_names(store: SQLiteRawTranscriptStore) -> set[str]:
+    rows = store.execute_sql("SELECT name FROM sqlite_master WHERE type = 'table'")
+    return {row["name"] for row in rows}
+
+
+def test_a_store_created_with_a_global_id_key_is_migrated_when_opened(tmp_path: Path):
+    """``CREATE TABLE IF NOT EXISTS`` לא היה מתקן מאגר קיים לעולם, ולכן
+    הפתיחה היא שמעבירה אותו למפתח ``(flight_id, id)`` - בלי לאבד שורה
+    ובלי לאבד את אכיפת ה-append-only."""
+    db_path = tmp_path / "old.db"
+    write_global_id_store(
+        db_path, [("m01", "f1", "בקרה, נץ אחת, הכל תקין."), ("f2-m01", "f2", "נץ שתיים, ממתינים.")]
+    )
+
+    with SQLiteRawTranscriptStore(db_path) as store:
+        assert primary_key_of(store) == ["flight_id", "id"]
+        assert LEGACY_PK_TABLE not in table_names(store), "the moved-aside table is cleaned up"
+
+        assert store.count() == 2
+        assert store.get("m01", flight_id="f1").text == "בקרה, נץ אחת, הכל תקין."
+        assert store.get("f2-m01", flight_id="f2").text == "נץ שתיים, ממתינים."
+
+        # האינדקסים והטריגרים נבנו מחדש על הטבלה החדשה ולא נעלמו עם הישנה.
+        indexes = {
+            row["name"]
+            for row in store.execute_sql(
+                "SELECT name FROM sqlite_master WHERE type = 'index' "
+                "AND tbl_name = 'raw_messages'"
+            )
+        }
+        assert "raw_messages_id_idx" in indexes
+        with pytest.raises(AppendOnlyViolationError):
+            store.execute_sql("UPDATE raw_messages SET text = 'שונה' WHERE id = 'm01'")
+
+        # ומה שהמיגרציה קיימת בשבילו: אותו מזהה בטיסה אחרת.
+        store.append(message(id="m01", flight_id="f3", text="נץ שלוש, בדרך."))
+        assert store.count() == 3
+
+
+def test_a_migration_cut_in_the_middle_is_finished_on_the_next_open(tmp_path: Path):
+    """ההעתקה מסתיימת לפני שהטבלה הישנה נמחקת, ולכן הפסקה באמצע משאירה
+    אותה במקום - והפתיחה הבאה ממשיכה מאיפה שנעצרה."""
+    db_path = tmp_path / "interrupted.db"
+    write_global_id_store(db_path, [("m01", "f1", "בקרה, נץ אחת, הכל תקין.")])
+    with SQLiteRawTranscriptStore(db_path) as store:
+        assert store.count() == 1
+
+    # מצב של מיגרציה שנקטעה: הטבלה שהועברה הצידה עוד קיימת, ושורה אחת
+    # שבה טרם הועתקה.
+    connection = sqlite3.connect(db_path)
+    connection.executescript(
+        f"CREATE TABLE {LEGACY_PK_TABLE} AS SELECT * FROM raw_messages WHERE 0;"
+        f"INSERT INTO {LEGACY_PK_TABLE} SELECT * FROM raw_messages;"
+    )
+    connection.execute(
+        f"UPDATE {LEGACY_PK_TABLE} SET id = 'm09', flight_id = 'f9', text = 'שורה שלא הועתקה'"
+    )
+    connection.commit()
+    connection.close()
+
+    with SQLiteRawTranscriptStore(db_path) as store:
+        assert store.count() == 2
+        assert store.get("m09", flight_id="f9").text == "שורה שלא הועתקה"
+        assert store.get("m01", flight_id="f1").text == "בקרה, נץ אחת, הכל תקין."
+        assert LEGACY_PK_TABLE not in table_names(store)
 
 
 def test_postgres_migration_covers_the_same_columns_and_blocks_writes():
@@ -347,6 +548,16 @@ def test_postgres_migration_covers_the_same_columns_and_blocks_writes():
     assert "REVOKE ALL ON raw_messages" in migration
     assert "GRANT SELECT, INSERT ON raw_messages" in migration
     assert "BEFORE UPDATE OR DELETE ON raw_messages" in migration
+
+    # המפתח הראשון היה גלובלי; המיגרציה השנייה מחליפה אותו באותו מפתח
+    # שהסכמה הנוכחית של SQLite מצהירה עליו, כדי ששני המנועים לא ייפרדו.
+    flight_scoped = (
+        RAW_STORE_PKG / "migrations" / "002_flight_scoped_message_id.postgres.sql"
+    ).read_text(encoding="utf-8")
+    assert "PRIMARY KEY (flight_id, id)" in sqlite_schema
+    assert "ADD PRIMARY KEY (flight_id, id)" in flight_scoped
+    assert "raw_messages_id_idx" in sqlite_schema
+    assert "raw_messages_id_idx" in flight_scoped
 
 
 def test_text_is_stored_without_sqlite_type_coercion(store: SQLiteRawTranscriptStore):

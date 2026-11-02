@@ -1,0 +1,28 @@
+# aura - מקרה גבול: malformed_and_empty
+#
+# נוצר אוטומטית מ-tests/fixtures/edge_cases/malformed_and_empty.yaml על ידי scripts/export_fixture_transcripts.py.
+# אין לערוך את הקובץ ישירות - ערכו את הפיקסצ'ר והריצו את הסקריפט מחדש.
+#
+# פורמט: message_id | timestamp | source | channel | text
+# 5 שורות הודעה.
+#
+# שורות שהפיקסצ'ר מצהיר עליהן כדחויות:
+#   flight-edge-03-m01 -> missing_required_field (text)
+#   flight-edge-03-m02 -> empty_text
+#   flight-edge-03-m03 -> empty_text
+#   flight-edge-03-m04 -> missing_required_field (timestamp)
+#   flight-edge-03-m05 -> missing_required_field (flight_id)
+#
+# שימו לב: מזהה הטיסה הוא שדה של הקובץ כולו, ולכן שורה שנשלחה
+# בלי מזהה טיסה מקבלת אותו מההנחיה למטה - ונקלטת. זו הסיבה
+# שהספירה כאן אינה זהה לדחיות שמעליה.
+#
+# תוצאה צפויה בהעלאה דרך הקליינט: 1 נקלטות, 0 כפילויות, 4 ל-dead-letter.
+# מזהה הטיסה למטה הוא הנחיה שהקורא מפרש, ולכן אין צורך להקליד אותו.
+# flight_id: flight-edge-03
+
+flight-edge-03-m01 | 2026-09-06T12:00:00Z | operator | command |
+flight-edge-03-m02 | 2026-09-06T12:00:05Z | operator | command |
+flight-edge-03-m03 | 2026-09-06T12:00:10Z | operator | command |
+flight-edge-03-m04 |                      | operator | command | בקרה, נץ שבע, מצב תקין.
+flight-edge-03-m05 | 2026-09-06T12:00:15Z | operator | command | בקרה, נץ שבע, מצב תקין.

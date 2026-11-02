@@ -95,6 +95,26 @@
   .msg.rej { opacity: .72; }
   .msg.rej .tx { text-decoration: line-through; text-decoration-color: var(--bad); }
   .msg .why { font-size: 11.5px; color: var(--bad); margin-top: 3px; }
+  /* מזהה ההודעה ליד כל משפט. הבלוק נשאר בכיוון הדף כדי שהמזהה יישב
+     מתחת לתחילת המשפט ולא בקצה הנגדי; המזהה עצמו עטוף ב-<bdi>, שמבודד
+     אותו ומרנדר את הטקסט הלטיני נכון בלי להפוך את יישור השורה. */
+  .msg .mid {
+    font-family: var(--mono); font-size: 10.5px; color: var(--dim);
+    margin-top: 3px; word-break: break-all;
+  }
+  .msg .mid.none { font-style: italic; }
+
+  /* מזהה הטיסה בראש התמלול: הוא מה שכל שורה למטה שייכת אליו, ולכן הוא
+     נאמר פעם אחת למעלה ולא חוזר בכל שורה. */
+  .flight-id {
+    display: flex; gap: 9px; align-items: baseline; flex-wrap: wrap;
+    margin: -8px 0 14px; padding-bottom: 12px; border-bottom: 1px solid var(--line);
+  }
+  .flight-id span { font-size: 11.5px; color: var(--dim); }
+  .flight-id b {
+    font-family: var(--mono); font-size: 15px; font-weight: 650; color: var(--accent);
+    direction: ltr; unicode-bidi: embed; word-break: break-all;
+  }
   .empty { color: var(--dim); font-size: 13.5px; padding: 18px 2px; text-align: center; }
 
   .card.full { grid-column: 1 / -1; }
@@ -120,10 +140,20 @@
   .fix-row.done { opacity: .5; }
   .fix-row .rowerr { grid-column: 1 / -1; color: var(--bad); font-size: 12px; }
   .fix-foot { display: flex; gap: 10px; align-items: center; margin-top: 14px; flex-wrap: wrap; }
-  .drop { border: 1.5px dashed var(--line); border-radius: 9px; padding: 14px;
-          text-align: center; font-size: 13px; color: var(--dim); background: var(--panel-2); }
-  .drop.over { border-color: var(--accent); color: var(--text); }
-  .drop button { width: auto; padding: 3px 10px; font-size: 13px; }
+  /* העלאת קובץ היא הדרך להזין טיסה שלמה, ולכן היא פס רוחב מלא בראש
+     הדף ולא תיבה בתוך "שדות נוספים" המקופלים - שם היא הייתה מוסתרת
+     בדיוק ממי שבא להזין קובץ. */
+  .drop { grid-column: 1 / -1; display: flex; align-items: center; gap: 16px;
+          flex-wrap: wrap; padding: 14px 18px; background: var(--panel);
+          border: 1.5px dashed var(--line); border-radius: 12px; }
+  .drop.over { border-color: var(--accent);
+               background: color-mix(in srgb, var(--accent) 10%, var(--panel)); }
+  .drop .d-text { flex: 1; min-width: 230px; }
+  .drop .d-title { font-size: 14px; font-weight: 600; color: var(--text); }
+  .drop .d-sub { font-size: 12.5px; color: var(--dim); margin-top: 3px; }
+  .drop button { width: auto; white-space: nowrap; padding: 10px 20px; font-weight: 600;
+                 background: var(--accent); border-color: var(--accent); color: #fff; }
+  .drop button:hover { filter: brightness(1.1); }
   .mono { font-family: var(--mono); font-size: 12.5px; }
 </style>
 </head>
@@ -136,6 +166,23 @@
 </header>
 
 <div class="wrap">
+  <div class="drop" id="drop">
+    <input type="file" id="pick" accept=".txt,.text,text/plain,.yaml,.yml" hidden>
+    <div class="d-text">
+      <div class="d-title">העלאת קובץ תמלול שלם</div>
+      <div class="d-sub">
+        גרור קובץ לכאן, או בחר אותו. שורה לכל משפט, בפורמט
+        <span class="mono" dir="ltr">message_id | timestamp | source | channel | text</span>.
+        הטיסה נלקחת משדה "מזהה טיסה" שלמטה, או משורת
+        <span class="mono" dir="ltr">#&nbsp;flight_id:</span> שבקובץ.
+        גם פיקסצ'ר <span class="mono" dir="ltr">.yaml</span> מתוך
+        <span class="mono" dir="ltr">tests/fixtures/</span> נקלט ישירות - מזהה
+        הטיסה נלקח מהשדה <span class="mono" dir="ltr">flight_id:</span> שבו.
+      </div>
+    </div>
+    <button id="browse" type="button">בחר קובץ</button>
+  </div>
+
   <div class="card">
     <h2>משפט חדש</h2>
     <div id="out"></div>
@@ -145,6 +192,8 @@
       <div class="inline">
         <input id="flight" placeholder="flight-01" autocomplete="off" list="known">
         <datalist id="known"></datalist>
+        <button id="restart-btn" type="button"
+                title="מתחיל ריצה חדשה של אותה טיסה, במזהה חדש. הריצה הקודמת נשמרת במלואה">התחל מחדש</button>
       </div>
     </label>
 
@@ -183,18 +232,9 @@
 
     <details>
       <summary>שדות נוספים</summary>
-      <label>
+      <label style="margin-bottom:0">
         <span>מזהה הודעה מהמקור — ריק = נגזר אוטומטית</span>
         <input id="mid" placeholder="flight-01-m07" autocomplete="off">
-      </label>
-      <label style="margin-bottom:0">
-        <span>העלאת קובץ תמלול שלם</span>
-        <div class="drop" id="drop">
-          <input type="file" id="pick" accept=".txt,.text,text/plain" hidden>
-          גרור קובץ לכאן או <button id="browse" type="button">בחר</button>
-          <div class="mono" style="margin-top:6px">message_id | timestamp | source | channel | text</div>
-          <div style="margin-top:5px">הטיסה נלקחת משדה "מזהה טיסה" שלמעלה, או משורת <span class="mono">#&nbsp;flight_id:</span> בקובץ</div>
-        </div>
       </label>
     </details>
 
@@ -227,7 +267,8 @@
   </div>
 
   <div class="card">
-    <h2>התמלול <span id="which" class="mono" style="text-transform:none"></span></h2>
+    <h2>התמלול</h2>
+    <div class="flight-id"><span>מזהה טיסה</span><b id="which">—</b></div>
     <div class="count">
       <div><b id="c-ok">0</b>נקלטו</div>
       <div><b id="c-dup">0</b>כפילויות</div>
@@ -246,8 +287,11 @@ const REASONS = {
   schema_invalid: "המבנה אינו תקין",
 };
 // הודעות שנדחו נשמרות רק בדף: הן אינן נכנסות למאגר הגולמי, ולכן אין
-// מאיפה לשלוף אותן אחרי רענון - וזה בכוונה.
+// מאיפה לשלוף אותן אחרי רענון - וזה בכוונה. גם מניין הכפילויות הוא של
+// הדף: המאגר שומר את ההודעה פעם אחת, ולכן "כמה פעמים נשלחה שוב" היא
+// שאלה על הסשן הזה ולא על המאגר.
 let rejected = [];
+let duplicates = {};
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g,
   (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
@@ -298,7 +342,7 @@ async function loadFlights() {
 
 async function loadFeed() {
   const id = $("flight").value.trim();
-  $("which").textContent = id ? `· ${id}` : "";
+  $("which").textContent = id || "—";
   if (!id) {
     $("feed").innerHTML = '<div class="empty">בחר טיסה או שלח משפט ראשון</div>';
     $("c-ok").textContent = $("c-dup").textContent = 0;
@@ -313,6 +357,7 @@ async function loadFeed() {
     return;
   }
   $("c-ok").textContent = msgs.length;
+  $("c-dup").textContent = duplicates[id] || 0;
 
   const mine = rejected.filter((r) => r.flight_id === id);
   $("c-bad").textContent = mine.length;
@@ -324,12 +369,18 @@ async function loadFeed() {
                           text: r.text, id: r.id, rej: r.reason })),
   ].sort((a, b) => String(b.ts).localeCompare(String(a.ts)));
 
+  // מזהה ההודעה מוצג ליד כל משפט: הוא המפתח שבו מדברים עליה בכל מקום
+  // אחר במערכת - שליפה לפי מזהה, source_ids של אירוע, ודיווח על כפילות.
+  // שורה שנדחתה עשויה להגיע בלי מזהה כלל, ואז נאמר שאין לה כזה במקום
+  // להציג שדה ריק שנראה כמו תקלה.
   $("feed").innerHTML = items.length
     ? items.map((m) => `<div class="msg ${m.rej ? "rej" : ""}">
         <div class="t">${m.ts ? new Date(m.ts).toLocaleTimeString("he-IL") : "—"}</div>
         <div class="b">
           <div class="who">${esc(m.source || "—")}${m.channel ? " · " + esc(m.channel) : ""}</div>
           <div class="tx">${esc(m.text) || "<i>(ריק)</i>"}</div>
+          ${m.id ? `<div class="mid"><bdi>${esc(m.id)}</bdi></div>`
+                 : `<div class="mid none">אין מזהה</div>`}
           ${m.rej ? `<div class="why">נדחה — ${esc(REASONS[m.rej] || m.rej)}</div>` : ""}
         </div>
       </div>`).join("")
@@ -370,6 +421,7 @@ async function send() {
       $("ts").value = nowUTC();
       $("text").focus();
     } else if (d.status === "duplicate") {
+      duplicates[flight] = (duplicates[flight] || 0) + 1;
       say("dup", `<b>כפילות.</b> המשפט הזה כבר נקלט` +
         `<div class="sub">לא נכנס שוב לעיבוד. שינוי הזמן או הטקסט יהפוך אותו להודעה חדשה.</div>`);
     } else {
@@ -391,17 +443,31 @@ async function send() {
   }
 }
 
-// --- העלאת קובץ (משני) ---------------------------------------------------
+// --- העלאת קובץ ----------------------------------------------------------
 const drop = $("drop");
 $("browse").onclick = (e) => { e.preventDefault(); $("pick").click(); };
-["dragenter", "dragover"].forEach((ev) => drop.addEventListener(ev, (e) => {
-  e.preventDefault(); drop.classList.add("over");
-}));
-["dragleave", "drop"].forEach((ev) => drop.addEventListener(ev, (e) => {
-  e.preventDefault(); drop.classList.remove("over");
-}));
-drop.addEventListener("drop", (e) => upload(e.dataTransfer.files[0]));
 $("pick").onchange = (e) => upload(e.target.files[0]);
+
+// הגרירה נתפסת על פני כל הדף ולא על הפס בלבד: קובץ שהושלך לידו היה
+// נפתח בדפדפן במקום להיקלט, ומה שהוקלד בטופס עד אז היה הולך לאיבוד.
+// הפס עצמו הוא שמודגש, כדי שיהיה ברור לאן הקובץ הולך.
+const draggingFile = (e) => Array.from(e.dataTransfer?.types || []).includes("Files");
+
+["dragenter", "dragover"].forEach((ev) => window.addEventListener(ev, (e) => {
+  if (!draggingFile(e)) return;
+  e.preventDefault();
+  drop.classList.add("over");
+}));
+["dragleave", "dragend"].forEach((ev) => window.addEventListener(ev, (e) => {
+  // relatedTarget ריק = הסמן יצא מהחלון, ולא עבר בין שני אלמנטים בתוכו.
+  if (!e.relatedTarget) drop.classList.remove("over");
+}));
+window.addEventListener("drop", (e) => {
+  if (!draggingFile(e)) return;
+  e.preventDefault();
+  drop.classList.remove("over");
+  upload(e.dataTransfer.files[0]);
+});
 
 // הודעות השגיאה של ה-API מנוסחות למי שקורא אותן ב-Swagger. בקליינט הן
 // מתורגמות להוראה מעשית, אחרת המשתמש מקבל טקסט מפתחים ולא יודע מה לעשות.
@@ -409,6 +475,12 @@ const UPLOAD_ERRORS = [
   ["no flight_id", "אין מזהה טיסה בקובץ. הזן מזהה טיסה בשדה שלמעלה ונסה שוב."],
   ["no message lines", "לא נמצאו שורות הודעה בקובץ. כל שורה צריכה להיות " +
     "<span class='mono'>message_id | timestamp | source | channel | text</span>."],
+  ["not a usable fixture", "הקובץ נראה כמו פיקסצ'ר YAML אך לא ניתן לקרוא ממנו טיסה. " +
+    "ודא שיש בו <span class='mono'>messages:</span> (או " +
+    "<span class='mono'>raw_inputs:</span>) ושדה <span class='mono'>flight_id:</span>."],
+  ["not a transcript", "זה לא נראה כמו קובץ תמלול - אף שורה בו אינה מחזיקה את חמשת " +
+    "השדות <span class='mono'>message_id | timestamp | source | channel | text</span>, " +
+    "וגם אינו פיקסצ'ר <span class='mono'>.yaml</span>. ודא שבחרת את הקובץ הנכון."],
   ["not valid UTF-8", "הקובץ אינו בקידוד UTF-8. שמור אותו מחדש כ-UTF-8 (עברית ב-cp1255 " +
     "הייתה נקלטת כג'יבריש)."],
   ["file is empty", "הקובץ ריק."],
@@ -423,12 +495,19 @@ function explainUploadError(detail) {
   return esc(text);
 }
 
-/** מחפש את ההנחיה בקובץ בצד הלקוח, כדי לא לשלוח העלאה שתיכשל ממילא. */
+/** מחפש את מזהה הטיסה בקובץ בצד הלקוח, כדי לא לשלוח העלאה שתיכשל ממילא.
+ *
+ *  שני הפורמטים מצהירים עליו אחרת: בקובץ תמלול זו הנחיית ההערה
+ *  `# flight_id:`, ובפיקסצ'ר YAML זה שדה ברמה העליונה `flight_id:`.
+ *  בלי השני, העלאת פיקסצ'ר הייתה נעצרת כאן ב-"צריך מזהה טיסה" עוד לפני
+ *  שהשרת רואה את הקובץ. */
 async function flightIdInFile(file) {
   try {
     const head = await file.slice(0, 8192).text();
-    const match = head.match(/^#\s*flight_id\s*:\s*([^\s#]+)\s*$/m);
-    return match ? match[1] : null;
+    const directive = head.match(/^#\s*flight_id\s*:\s*([^\s#]+)\s*$/m);
+    if (directive) return directive[1];
+    const yamlKey = head.match(/^flight_id\s*:\s*["']?([^\s"'#]+)["']?\s*$/m);
+    return yamlKey ? yamlKey[1] : null;
   } catch (e) {
     return null;   // לא הצלחנו לקרוא - נשלח ונתן לשרת להחליט
   }
@@ -459,6 +538,8 @@ async function upload(file) {
       return;
     }
     $("flight").value = d.report.flight_id;
+    duplicates[d.report.flight_id] =
+      (duplicates[d.report.flight_id] || 0) + d.duplicate_count;
     const bad = d.results.filter((x) => x.dead_letter);
     say("ok", `<b>${esc(file.name)}</b> נקלט לטיסה <span class="mono">${esc(d.report.flight_id)}</span>` +
       `<div class="sub">נקלטו ${d.accepted_count} · כפילויות ${d.duplicate_count} · נדחו ${d.dead_letter_count}` +
@@ -636,6 +717,59 @@ $("fix-clear").onclick = () => {
   renderRepairs();
 };
 
+// --- התחלת טיסה מחדש -----------------------------------------------------
+// המאגר הוא append-only: אין "לנקות טיסה ולהתחיל אותה שוב". מה שיש הוא
+// ריצה חדשה במזהה חדש - הטיסה הקודמת נשארת שלמה ונשלפת לפי המזהה שלה,
+// וזו גם הדרך להזרים את אותו קובץ תמלול עוד פעם בלי שייחשב כפילות.
+const RUN_SUFFIX = /-run(\d+)$/;
+
+function nextRunId(flightId, taken) {
+  const match = flightId.match(RUN_SUFFIX);
+  const base = match ? flightId.slice(0, -match[0].length) : flightId;
+  // "flight-01" היא ריצה 1 במשתמע, ולכן הבאה אחריה היא run2.
+  let run = match ? Number(match[1]) + 1 : 2;
+  while (taken.has(`${base}-run${run}`)) run += 1;
+  return `${base}-run${run}`;
+}
+
+async function restartFlight() {
+  const current = $("flight").value.trim();
+  if (!current) {
+    say("bad", "אין טיסה להתחיל מחדש.<div class=\"sub\">הזן מזהה טיסה תחילה.</div>");
+    $("flight").focus();
+    return;
+  }
+
+  const taken = new Set([current]);
+  try {
+    (await (await fetch("/flights")).json()).forEach((f) => taken.add(f));
+  } catch (e) { /* בלי הרשימה נסתמך על המזהה הנוכחי בלבד */ }
+  const next = nextRunId(current, taken);
+
+  // שורות שהמתינו להשלמה שייכות לריצה הקודמת. הן נמחקות עם המעבר, ולכן
+  // הדף אומר כמה - כדי שלא ייעלמו בשקט.
+  const waiting = repairs.filter((r) => !r.sent).length;
+  repairs = [];
+  rejected = [];
+  $("fix-status").textContent = "";
+  renderRepairs();
+
+  $("flight").value = next;
+  $("mid").value = "";
+  $("text").value = "";
+  $("ts").value = nowUTC();
+  remember();
+  await loadFlights();
+  await loadFeed();
+
+  say("ok", `<b>ריצה חדשה:</b> <span class="mono">${esc(next)}</span>` +
+    `<div class="sub">הריצה הקודמת (<span class="mono">${esc(current)}</span>) נשמרה ` +
+    `במלואה ונשלפת לפי המזהה שלה.` +
+    (waiting ? ` ${waiting} שורות שהמתינו להשלמה נוקו.` : "") + `</div>`);
+  $("text").focus();
+}
+
+$("restart-btn").onclick = restartFlight;
 $("send").onclick = send;
 $("now-btn").onclick = () => { $("ts").value = nowUTC(); };
 $("source").onchange = () => { toggleOther(); remember(); };

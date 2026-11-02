@@ -1,0 +1,17 @@
+# aura - מקרה גבול: late_arrival
+#
+# נוצר אוטומטית מ-tests/fixtures/edge_cases/late_arrival.yaml על ידי scripts/export_fixture_transcripts.py.
+# אין לערוך את הקובץ ישירות - ערכו את הפיקסצ'ר והריצו את הסקריפט מחדש.
+#
+# late-arrival-out-of-order
+#
+# פורמט: message_id | timestamp | source | channel | text
+# 3 שורות הודעה.
+#
+# תוצאה צפויה בהעלאה דרך הקליינט: 3 נקלטות, 0 כפילויות, 0 ל-dead-letter.
+# מזהה הטיסה למטה הוא הנחיה שהקורא מפרש, ולכן אין צורך להקליד אותו.
+# flight_id: flight-edge-02
+
+flight-edge-02-m01 | 2026-09-05T10:00:00Z | operator | command | בקרה, נץ שש, מתחילים סריקה.
+flight-edge-02-m03 | 2026-09-05T10:00:20Z | operator | command | בקרה, נץ שש, אין ממצאים נוספים.
+flight-edge-02-m02 | 2026-09-05T10:00:10Z | operator | command | בקרה, נץ שש, קשר עין עם רכב בודד, לא חשוד.

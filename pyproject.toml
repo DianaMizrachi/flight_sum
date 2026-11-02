@@ -33,6 +33,7 @@ where = ["src"]
 aura = [
     "taxonomy/*.yaml",
     "raw_store/*.sql",
+    "event_store/*.sql",
     "raw_store/migrations/*.sql",
     "api/static/*.html",
 ]

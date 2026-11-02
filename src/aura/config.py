@@ -99,6 +99,68 @@ class LLMConfig(BaseModel):
     )
 
 
+class StateConfig(BaseModel):
+    """ספי הביטחון של מנהל המצב (רכיב 6, שלב 6).
+
+    שני ספים ולא אחד, כי "כמה אני בטוח" ו"מה מותר לי לדרוס" הן שתי
+    שאלות. ``verified_confidence`` קובע מה נחשב מידע מאומת;
+    ``min_confidence_to_apply`` קובע מתחת לאיזה ביטחון אירוע נרשם אך
+    אינו נוגע במצב כלל.
+    """
+
+    verified_confidence: float = Field(
+        default=0.85,
+        ge=0.0,
+        le=1.0,
+        description="PLACEHOLDER - לא מופיע בתכנית; מעליו המידע נחשב מאומת",
+    )
+    reported_confidence: float = Field(
+        default=0.5,
+        ge=0.0,
+        le=1.0,
+        description="PLACEHOLDER - מעליו המידע 'מדווח', מתחתיו 'לא ודאי'",
+    )
+    min_confidence_to_apply: float = Field(
+        default=0.3,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "PLACEHOLDER - מתחת לסף הזה האירוע נרשם אך אינו משנה מצב כלל. "
+            "התכנית מנסחת זאת כ'מתחת לסף - נרשם כאירוע אך לא משנה מצב מאומת'."
+        ),
+    )
+
+
+class SummaryConfig(BaseModel):
+    """מנגנון התקצירים (רכיב 8, שלב 8).
+
+    שני הספים קיימים כי "קרה משהו" ו"כדאי לכתוב תקציר חדש" אינם אותו
+    דבר. מנהל המצב מציע טריגר כמעט בכל חלון שבו משהו השתנה; בלי סף,
+    הפועל היוצא הוא תקציר אחרי כמעט כל משפט - בדיוק מה שהתכנית אוסרת
+    ("מופעל רק בטריגרים").
+    """
+
+    max_chars: int = Field(
+        default=1200,
+        gt=0,
+        description="PLACEHOLDER - התקרה שהתקציר אינו חורג ממנה. התכנית אומרת 'מוגבל בגודל'",
+    )
+    min_events_between: int = Field(
+        default=8,
+        ge=1,
+        description=(
+            "כמה אירועים חייבים להצטבר לפני תקציר שנובע מ'אירוע משמעותי' בלבד. "
+            "שינוי משימה או שינוי מצב מהותי עוקפים את הסף."
+        ),
+    )
+    threshold_messages: int = Field(
+        default=40, ge=1, description="PLAN DEFAULT ('מעבר סף: מספר משפטים')"
+    )
+    threshold_tokens: int = Field(
+        default=1500, ge=1, description="PLAN DEFAULT ('מעבר סף: טוקנים')"
+    )
+
+
 class ReconcilerConfig(BaseModel):
     window_minutes: int = Field(default=7, description="PLAN DEFAULT (range is 5-10 minutes)")
 
@@ -108,6 +170,8 @@ class Settings(BaseModel):
     flight_end: FlightEndConfig = Field(default_factory=FlightEndConfig)
     token_budget: TokenBudgetConfig = Field(default_factory=TokenBudgetConfig)
     llm: LLMConfig = Field(default_factory=LLMConfig)
+    state: StateConfig = Field(default_factory=StateConfig)
+    summary: SummaryConfig = Field(default_factory=SummaryConfig)
     reconciler: ReconcilerConfig = Field(default_factory=ReconcilerConfig)
 
 

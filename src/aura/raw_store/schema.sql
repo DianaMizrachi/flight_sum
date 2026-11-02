@@ -5,7 +5,7 @@
 -- ל-Postgres (הרשאות ברמת role + טריגר) נמצאת ב-migrations/.
 
 CREATE TABLE IF NOT EXISTS raw_messages (
-    id                 TEXT PRIMARY KEY,
+    id                 TEXT NOT NULL,
     flight_id          TEXT NOT NULL,
     timestamp          TEXT NOT NULL,  -- ISO-8601 ב-UTC; מיון לקסיקוגרפי = מיון כרונולוגי
     ingested_at        TEXT NOT NULL,
@@ -17,12 +17,21 @@ CREATE TABLE IF NOT EXISTS raw_messages (
     status             TEXT NOT NULL,
     dead_letter_reason TEXT,
     metadata           TEXT NOT NULL,  -- JSON
-    stored_at          TEXT NOT NULL   -- מתי המאגר כתב את השורה
+    stored_at          TEXT NOT NULL,  -- מתי המאגר כתב את השורה
+
+    -- המזהה ייחודי *בתוך הטיסה*, לא במאגר כולו. הוא מגיע מהמקור, ומקורות
+    -- של שתי טיסות שונות יכולים שניהם למנות "m01" - זה לא התנגשות אלא
+    -- המצב הרגיל. כשהמפתח היה גלובלי, הטיסה השנייה חזרה מרכיב 1 כ-
+    -- duplicate למרות שתוכנה חדש לגמרי (ראו migrations/002).
+    PRIMARY KEY (flight_id, id)
 );
 
--- אינדקסים לשלושת מפתחות השליפה מהתכנית: מזהה (ה-PRIMARY KEY), טיסה,
--- וטווח זמן בתוך טיסה.
-CREATE INDEX IF NOT EXISTS raw_messages_flight_idx ON raw_messages (flight_id);
+-- אינדקסים לשלושת מפתחות השליפה מהתכנית. שליפה לפי טיסה לבדה כבר מכוסה
+-- בעמודה השמאלית של ה-PRIMARY KEY, ולכן אין כאן אינדקס נפרד עליה;
+-- שליפה לפי מזהה *בתוך* טיסה מכוסה במפתח כולו. האינדקס על המזהה לבדו
+-- הוא לשליפה על פני כל המאגר (``get`` בלי ``flight_id``), שאחרת הייתה
+-- סריקה מלאה - העמודה אינה השמאלית במפתח.
+CREATE INDEX IF NOT EXISTS raw_messages_id_idx ON raw_messages (id);
 CREATE INDEX IF NOT EXISTS raw_messages_flight_time_idx ON raw_messages (flight_id, timestamp);
 CREATE INDEX IF NOT EXISTS raw_messages_flight_hash_idx ON raw_messages (flight_id, dedup_hash);
 

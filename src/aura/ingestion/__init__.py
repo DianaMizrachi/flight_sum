@@ -17,8 +17,10 @@ from aura.ingestion.queue import InMemoryQueue, MessageQueue
 from aura.ingestion.service import IngestionService
 from aura.ingestion.text_format import (
     ParsedTranscript,
+    UnrenderableSentenceError,
     find_flight_id_directive,
     parse_transcript_text,
+    render_transcript_text,
 )
 
 __all__ = [
@@ -32,6 +34,7 @@ __all__ = [
     "IngestionService",
     "MessageQueue",
     "ParsedTranscript",
+    "UnrenderableSentenceError",
     "dedup_key",
     "find_flight_id_directive",
     "normalize_identifier",
@@ -39,4 +42,5 @@ __all__ = [
     "normalize_timestamp",
     "parse_transcript_text",
     "payload_hash",
+    "render_transcript_text",
 ]

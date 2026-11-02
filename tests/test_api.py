@@ -246,6 +246,44 @@ def test_unknown_message_id_returns_404(client: TestClient):
     assert client.get("/messages/nope").status_code == 404
 
 
+def test_the_same_source_id_in_two_flights_is_fetched_by_flight(client: TestClient):
+    """מזהה ההודעה ייחודי בתוך הטיסה בלבד, ולכן ``flight_id`` הוא מה
+    שהופך אותו למפתח - וזו גם הדרך שבה אירוע יחזור לתמלול שלו, כי
+    ``Event`` מחזיק את שני השדות."""
+    for flight, text in (("flight-a", "נץ אחת, הכל תקין."), ("flight-b", "נץ שתיים, ממתינים.")):
+        response = client.post(
+            "/messages", json={**VALID_PAYLOAD, "id": "m01", "flight_id": flight, "text": text}
+        )
+        assert response.status_code == 201, "another flight is another message, not a duplicate"
+
+    assert client.get("/messages/m01", params={"flight_id": "flight-a"}).json()["text"] == (
+        "נץ אחת, הכל תקין."
+    )
+    assert client.get("/messages/m01", params={"flight_id": "flight-b"}).json()["text"] == (
+        "נץ שתיים, ממתינים."
+    )
+    assert client.get("/messages/m01", params={"flight_id": "flight-c"}).status_code == 404
+
+
+def test_an_id_that_lives_in_two_flights_is_a_conflict_not_a_guess(client: TestClient):
+    """בלי טיסה אין מפתח. עדיף 409 שאומר באילו טיסות המזהה קיים מלהחזיר
+    אחת מהן ולהשאיר את הקורא עם משפט של טיסה אחרת."""
+    for flight in ("flight-a", "flight-b"):
+        client.post("/messages", json={**VALID_PAYLOAD, "id": "m01", "flight_id": flight})
+
+    response = client.get("/messages/m01")
+
+    assert response.status_code == 409
+    detail = response.json()["detail"]
+    assert "flight-a" in detail and "flight-b" in detail
+
+
+def test_a_unique_id_still_needs_no_flight(client: TestClient):
+    client.post("/messages", json={**VALID_PAYLOAD, "id": "m01", "flight_id": "flight-a"})
+
+    assert client.get("/messages/m01").json()["flight_id"] == "flight-a"
+
+
 def test_flight_transcript_is_returned_in_chronological_order(client: TestClient):
     data = load_yaml(EDGE_CASES_DIR / "late_arrival.yaml")
     client.post("/messages/batch", json={"messages": data["raw_inputs"]})
@@ -294,20 +332,23 @@ def test_status_reports_stages_and_components(client):
     body = client.get("/status").json()
     assert body["status"] == "ok"
     assert body["stages_total"] == 13
-    assert body["stages_built"] == [0, 1, 2, 3, 4]
+    assert body["stages_built"] == [0, 1, 2, 3, 4, 5, 6, 7, 8]
     assert len(body["components"]) == 12
     assert body["uptime_seconds"] >= 0
 
 
 def test_status_separates_built_from_exposed_over_http(client):
-    """Components 3 and 4 are built but are libraries; nothing calls them
-    over HTTP yet. Collapsing the two would make the page claim a running
-    pipeline that does not exist until stage 6."""
+    """Components 3-8 are built but are libraries; nothing calls them over
+    HTTP yet. The 1->8 pipeline runs (aura.pipeline) and produces a flight
+    summary and highlights, but only in-process - collapsing the two would
+    make the page claim a running service that does not exist until stage
+    10 exposes it."""
     components = {c["id"]: c for c in client.get("/status").json()["components"]}
-    assert components[3]["built"] and not components[3]["exposed_over_http"]
-    assert components[4]["built"] and not components[4]["exposed_over_http"]
+    for component_id in (3, 4, 5, 6, 7, 8):
+        assert components[component_id]["built"]
+        assert not components[component_id]["exposed_over_http"]
     assert components[1]["built"] and components[1]["exposed_over_http"]
-    assert not components[5]["built"]
+    assert not components[9]["built"], "the query service is stage 9"
 
 
 def test_status_counts_match_the_store_and_dead_letter_log(client):
@@ -464,6 +505,47 @@ def test_upload_records_the_source_line_for_traceability(client):
         assert metadata["source_line"].isdigit()
 
 
+def test_the_sample_file_can_be_injected_again_under_another_flight(client):
+    """A source id is unique within its flight, so the client can replay the
+    file as a new flight: typing a flight id overrides the file's directive
+    and every line is ingested again. While the store keyed a message by id
+    alone, this came back as 24 duplicates and one accepted line."""
+    first = upload(client, SAMPLE_FILE.read_bytes(), "flight_sim_01.txt").json()
+    replay = upload(
+        client, SAMPLE_FILE.read_bytes(), "flight_sim_01.txt", flight_id="replay-01"
+    ).json()
+
+    assert replay["report"]["flight_id"] == "replay-01"
+    assert replay["report"]["flight_id_source"] == "request"
+    assert (replay["accepted_count"], replay["duplicate_count"], replay["dead_letter_count"]) == (
+        first["accepted_count"],
+        first["duplicate_count"],
+        first["dead_letter_count"],
+    )
+    assert len(client.get("/flights/replay-01/messages").json()) == 23
+
+
+def test_a_file_with_fixed_ids_can_also_be_uploaded_to_a_second_flight(client):
+    """הצד הגלוי של אותו תיקון: קובץ שממנה את שורותיו (m01, m02...) נקלט
+    לכל טיסה בנפרד. כשהמזהה היה מפתח גלובלי, הטיסה השנייה חזרה כולה
+    כ-``duplicate`` למרות שאין במאגר אף הודעה שלה."""
+    content = (
+        "m01 | 2026-10-28T08:00:00Z | operator | command | בקרה, נץ אחת, הכל תקין.\n"
+        "m02 | 2026-10-28T08:00:30Z | ops      | command | נץ אחת, בקרה, קיבלתי.\n"
+    ).encode()
+
+    first = upload(client, content, flight_id="fixed-ids-a").json()
+    second = upload(client, content, flight_id="fixed-ids-b").json()
+
+    assert (first["accepted_count"], first["duplicate_count"]) == (2, 0)
+    assert (second["accepted_count"], second["duplicate_count"]) == (2, 0)
+    assert [m["id"] for m in client.get("/flights/fixed-ids-b/messages").json()] == ["m01", "m02"]
+
+    # אותו קובץ לאותה טיסה הוא עדיין כפילות - זה הצד שאמור לעבוד.
+    repeat = upload(client, content, flight_id="fixed-ids-a").json()
+    assert (repeat["accepted_count"], repeat["duplicate_count"]) == (0, 2)
+
+
 def test_upload_reuses_the_same_ingestion_rules(client):
     """No second ingestion path: normalisation and dedup must still apply."""
     content = (
@@ -529,6 +611,42 @@ def test_upload_reports_short_lines_but_still_ingests_them(client):
     assert body["results"][1]["dead_letter"]["reason"] == "missing_required_field"
 
 
+def test_a_file_that_is_neither_a_transcript_nor_a_fixture_is_rejected_whole(client):
+    """בחירת קובץ לא נכון נענית בהסבר, לא במאות שורות dead-letter.
+
+    בלי הבדיקה הזו כל שורה בקובץ זר נרשמת ל-dead-letter בנפרד,
+    והקליינט מציע להשלים ביד כל אחת מהן - במקום לומר שזה לא תמלול.
+    """
+    content = "סתם טקסט חופשי\nבלי שום שדות\nועוד שורה\n".encode()
+
+    response = upload(client, content, "notes.txt", flight_id="junk-01")
+
+    assert response.status_code == 400
+    assert "not a transcript" in response.json()["detail"]
+    assert client.get("/flights/junk-01/messages").json() == []
+
+
+def test_a_file_with_one_good_line_among_bad_ones_still_ingests(client):
+    """הגבול של אותה בדיקה: שורה תקינה אחת מספיקה כדי שהקובץ הוא תמלול.
+
+    "שמירה לפני עיבוד" נשאר בתוקף - השורות הפגומות מגיעות ל-dead-letter
+    עם סיבה, ולא נדחות יחד עם הקובץ.
+    """
+    content = (
+        "# flight_id: mostly-bad\n"
+        "messages:\n"
+        "  - id: nope\n"
+        "g-m01 | 2026-10-28T08:00:00Z | operator | command | שורה אחת תקינה.\n"
+        "  - text: also nope\n"
+    ).encode()
+
+    body = upload(client, content).json()
+
+    assert body["accepted_count"] == 1
+    assert body["dead_letter_count"] == 3
+    assert body["report"]["short_lines"] == [2, 3, 5]
+
+
 def test_upload_keeps_a_pipe_inside_the_sentence(client):
     content = (
         "# flight_id: pipe-test\n"
@@ -566,6 +684,11 @@ def test_client_translates_every_upload_error_the_api_can_return(client):
         "empty file": (b"  \n", "f"),
         "not utf-8": ("שלום | x".encode("cp1255"), "f"),
         "too large": (b"a" * (5 * 1024 * 1024 + 1), "f"),
+        # קובץ אחר שנבחר בטעות: שורות קיימות, אבל אף אחת אינה תמלול,
+        # והקובץ גם אינו פיקסצ'ר (אין בו מפתח הודעות מוכר).
+        "not a transcript": (b"hello world\nthis is just prose\n", "f"),
+        # פיקסצ'ר שאין בו מזהה טיסה ולא נשלח אחד בטופס.
+        "fixture without a flight": (b"messages:\n  - id: m01\n    text: shalom\n", None),
     }
     for label, (content, flight_id) in provoke.items():
         response = upload(client, content, flight_id=flight_id)
@@ -574,6 +697,37 @@ def test_client_translates_every_upload_error_the_api_can_return(client):
         assert any(needle in detail for needle in needles), (
             f"{label}: the client cannot translate {detail!r}"
         )
+
+
+# --- what the transcript shows ------------------------------------------
+
+
+def test_the_transcript_names_its_flight_at_the_top(client):
+    """מי שמסתכל על התמלול צריך לדעת של איזו טיסה הוא."""
+    page = client.get("/").text
+
+    assert 'class="flight-id"' in page
+    assert "מזהה טיסה" in page
+    assert '<b id="which">' in page
+
+
+def test_every_sentence_is_shown_with_its_message_id(client):
+    """מזהה ההודעה הוא המפתח שבו מדברים עליה בכל מקום אחר במערכת.
+
+    שליפה לפי מזהה, ``source_ids`` של אירוע ודיווח על כפילות - כולם
+    מצביעים עליו, ולכן הוא מוצג ליד המשפט ולא רק קיים בנתונים.
+    """
+    page = client.get("/").text
+
+    assert 'class="mid"' in page
+    assert "${esc(m.id)}" in page
+
+
+def test_a_line_without_an_id_says_so_instead_of_showing_a_blank(client):
+    """שורה שנדחתה יכולה להגיע בלי מזהה כלל; שדה ריק נראה כמו תקלה."""
+    page = client.get("/").text
+
+    assert "אין מזהה" in page
 
 
 # --- completing a rejected line ----------------------------------------

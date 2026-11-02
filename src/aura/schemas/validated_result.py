@@ -10,7 +10,17 @@ class RejectedEvent(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     raw: dict = Field(description="הפלט הגולמי מהמודל שנדחה, כמילון")
-    reason: str = Field(min_length=1)
+    reason: str = Field(
+        min_length=1,
+        description=(
+            "קוד הדחייה היציב מתוך ``RejectionReason`` - מה שנספר, מסונן ומושווה "
+            "מול הפיקסצ'רים. ההסבר החופשי יושב ב-``detail`` ולא כאן, כדי שהקוד "
+            "יישאר בר-השוואה מדויקת."
+        ),
+    )
+    detail: str | None = Field(
+        default=None, description="הסבר קריא לאדם שבא לבדוק את הדחייה ידנית"
+    )
     retry_count: int = Field(default=0, ge=0)
 
 

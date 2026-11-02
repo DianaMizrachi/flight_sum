@@ -9,6 +9,10 @@
     דיווח על יצירת קשר, זיהוי חזותי/חושי או מעקב אחר מטרה.
   applicable_entity_types: [target]
   required_fields: [entities]
+  # משפט אחד אינו יכול לקבוע גם שיש קשר וגם שאבד, על אותה מטרה.
+  # סתירה בין דיווחים *על פני זמן* היא לגיטימית ואינה נוגעת לכאן.
+  contradicts: [loss_of_contact]
+  state_attribute: contact_status
   examples_he:
     - "יש לנו קשר עם מטרה אלפא, טווח 4 קילומטר."
     - "מזהים חזותית את הרכב החשוד בצומת הצפוני."
@@ -19,6 +23,8 @@
     דיווח על אובדן קשר, ירידת קשר תקשורת, או היעלמות מטרה ממעקב.
   applicable_entity_types: [target, force]
   required_fields: [entities]
+  contradicts: [contact_with_target]
+  state_attribute: contact_status
   examples_he:
     - "איבדנו קשר עם מטרה אלפא, נכנסה למבנה."
     - "אין קשר עם היחידה המתקדמת כבר שתי דקות."
@@ -29,6 +35,7 @@
     עדכון מטרת המשימה, שינוי גזרה, או הוראת מעבר למשימה אחרת.
   applicable_entity_types: [area, force, target]
   required_fields: [new_info]
+  state_attribute: mission
   examples_he:
     - "מעבר למשימת מעקב בגזרה המזרחית, לפי הוראת המפקדה."
     - "המשימה הנוכחית הושלמה, עוברים לסיור שגרתי."
@@ -39,6 +46,7 @@
     תקלה טכנית בכלי הטיס, בחיישן, בקישור התקשורת או בציוד הייעודי.
   applicable_entity_types: [force]
   required_fields: [entities, new_info]
+  state_attribute: malfunction_status
   examples_he:
     - "יש לנו תקלה במצלמה האלקטרו-אופטית, עוברים לחיישן חילופי."
     - "ירידה חדה בקישור הנתונים, בודקים אנטנה."

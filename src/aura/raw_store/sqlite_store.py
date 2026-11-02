@@ -19,8 +19,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from aura.raw_store.store import (
+    AmbiguousMessageIdError,
     AppendOnlyViolationError,
     DuplicateMessageError,
+    RawStoreError,
 )
 from aura.schemas import Message
 
@@ -49,6 +51,11 @@ _INSERT = (
 
 _SELECT = f"SELECT {', '.join(_COLUMNS)} FROM raw_messages"
 
+# הטבלה שהמיגרציה מעבירה הצידה: מאגר שנוצר לפני שהמפתח הראשי הפך
+# ל-(flight_id, id). קיומה אומר שהמיגרציה התחילה ולא הסתיימה.
+_LEGACY_PK_TABLE = "raw_messages_global_id_pk"
+_FLIGHT_SCOPED_PK = ["flight_id", "id"]
+
 
 class SQLiteRawTranscriptStore:
     """מאגר התמלול הגולמי מעל SQLite.
@@ -72,14 +79,17 @@ class SQLiteRawTranscriptStore:
     # --- כתיבה ----------------------------------------------------------
 
     def append(self, message: Message) -> None:
-        """הוספת הודעה. מעלה ``DuplicateMessageError`` אם המזהה קיים."""
+        """הוספת הודעה. מעלה ``DuplicateMessageError`` אם המזהה קיים *באותה
+        טיסה*; אותו מזהה בטיסה אחרת הוא הודעה אחרת ונכתב כרגיל."""
         with self._lock:
             try:
                 self._connection.execute(_INSERT, self._to_row(message))
                 self._connection.commit()
             except sqlite3.IntegrityError as exc:
                 self._connection.rollback()
-                raise DuplicateMessageError(f"message {message.id} already stored") from exc
+                raise DuplicateMessageError(
+                    f"message {message.id} already stored for flight {message.flight_id}"
+                ) from exc
 
     def append_many(self, messages: Iterable[Message]) -> int:
         """הוספת רצף הודעות בטרנזקציה אחת - הכול או כלום."""
@@ -97,13 +107,43 @@ class SQLiteRawTranscriptStore:
 
     # --- שליפה ----------------------------------------------------------
 
-    def get(self, message_id: str) -> Message | None:
-        """שליפה לפי מזהה (מפתח 1 מהתכנית)."""
-        row = self._query(f"{_SELECT} WHERE id = ?", (message_id,))
-        return self._to_message(row[0]) if row else None
+    def get(self, message_id: str, *, flight_id: str | None = None) -> Message | None:
+        """שליפה לפי מזהה (מפתח 1 מהתכנית), בתוך טיסה או על פני המאגר.
 
-    def exists(self, message_id: str) -> bool:
+        עם ``flight_id`` זו שליפה לפי המפתח הראשי המלא. בלעדיו המזהה אינו
+        מפתח: הוא ייחודי בתוך הטיסה בלבד, ולכן אם הוא קיים בכמה טיסות
+        עולה :class:`AmbiguousMessageIdError` במקום שתיבחר שורה שרירותית.
+        """
+        if flight_id is not None:
+            rows = self._query(f"{_SELECT} WHERE flight_id = ? AND id = ?", (flight_id, message_id))
+            return self._to_message(rows[0]) if rows else None
+
+        rows = self._query(f"{_SELECT} WHERE id = ? ORDER BY flight_id", (message_id,))
+        if not rows:
+            return None
+        if len(rows) > 1:
+            raise AmbiguousMessageIdError(message_id, [row["flight_id"] for row in rows])
+        return self._to_message(rows[0])
+
+    def exists(self, message_id: str, *, flight_id: str | None = None) -> bool:
+        """האם ההודעה קיימת. בלי ``flight_id`` - בכל טיסה שהיא; ריבוי
+        התאמות אינו דו-משמעות כאן, כי התשובה היא כן בכל מקרה."""
+        if flight_id is not None:
+            return bool(
+                self._query(
+                    "SELECT 1 FROM raw_messages WHERE flight_id = ? AND id = ?",
+                    (flight_id, message_id),
+                )
+            )
         return bool(self._query("SELECT 1 FROM raw_messages WHERE id = ?", (message_id,)))
+
+    def flights_with_message(self, message_id: str) -> list[str]:
+        """הטיסות שבהן קיים המזהה הזה - מה שהופך דו-משמעות לתשובה שימושית."""
+        rows = self._query(
+            "SELECT DISTINCT flight_id FROM raw_messages WHERE id = ? ORDER BY flight_id",
+            (message_id,),
+        )
+        return [row["flight_id"] for row in rows]
 
     def by_flight(self, flight_id: str, *, limit: int | None = None) -> list[Message]:
         """כל הודעות הטיסה (מפתח 2), בסדר כרונולוגי לפי החותמת המקורית."""
@@ -206,9 +246,95 @@ class SQLiteRawTranscriptStore:
     # --- פנימי ----------------------------------------------------------
 
     def _apply_schema(self) -> None:
+        schema = _SCHEMA_PATH.read_text(encoding="utf-8")
         with self._lock:
-            self._connection.executescript(_SCHEMA_PATH.read_text(encoding="utf-8"))
+            self._connection.executescript(schema)
             self._connection.commit()
+            self._adopt_flight_scoped_primary_key(schema)
+
+    # --- מיגרציה: מפתח גלובלי -> (flight_id, id) ------------------------
+    #
+    # כל מה שלמטה רץ תחת המנעול של ``_apply_schema`` וניגש לחיבור ישירות,
+    # ולא דרך ``_query``, כדי לא לנעול מנעול שאינו re-entrant.
+
+    def _adopt_flight_scoped_primary_key(self, schema: str) -> None:
+        """מעביר מאגר שנוצר עם מפתח ראשי גלובלי למפתח ``(flight_id, id)``.
+
+        מאגר חדש נוצר נכון מראש, ולכן זהו no-op. מאגר קיים נבנה פעם אחת עם
+        ``id TEXT PRIMARY KEY``, ו-``CREATE TABLE IF NOT EXISTS`` לא היה
+        מתקן אותו לעולם - הוא היה ממשיך להחזיר הודעה של טיסה חדשה
+        כ-``duplicate`` רק מפני שמקור אחר מנה שורה באותו מספר.
+
+        הסדר כאן נבחר כך שהפסקה באמצע לא תאבד שורה: הטבלה הישנה מועברת
+        הצידה, הסכמה הנוכחית יוצרת את החדשה, השורות מועתקות, מתבצעת
+        בדיקה שלא נשארה שורה מאחור - ורק אז הישנה נמחקת. בפתיחה הבאה
+        הטבלה שהועברה הצידה עוד כאן, וההעתקה ממשיכה מאיפה שנעצרה.
+
+        המיגרציה אינה פוגעת ב-append-only: אין כאן UPDATE ואין DELETE של
+        שורה, אלא העתקה מלאה של כל שורה כפי שהיא ומחיקת *הטבלה* הישנה.
+        """
+        if not self._table_exists(_LEGACY_PK_TABLE):
+            if self._primary_key_of("raw_messages") == _FLIGHT_SCOPED_PK:
+                return
+            self._set_legacy_table_aside(schema)
+        self._copy_legacy_rows()
+
+    def _set_legacy_table_aside(self, schema: str) -> None:
+        connection = self._connection
+        # טריגרים ואינדקסים נודדים עם הטבלה ב-RENAME, ואז ה-
+        # ``CREATE ... IF NOT EXISTS`` שבסכמה היה מדלג עליהם בגלל התנגשות
+        # שם - והטבלה החדשה הייתה נשארת בלי אכיפת append-only ובלי
+        # אינדקסים, עד שהם ייעלמו לגמרי עם מחיקת הישנה.
+        for kind in ("trigger", "index"):
+            for name in self._objects_on("raw_messages", kind):
+                connection.execute(f"DROP {kind.upper()} IF EXISTS {name}")
+        connection.execute(f"ALTER TABLE raw_messages RENAME TO {_LEGACY_PK_TABLE}")
+        connection.commit()
+        connection.executescript(schema)
+        connection.commit()
+
+    def _copy_legacy_rows(self) -> None:
+        connection = self._connection
+        columns = ", ".join(_COLUMNS)
+        not_yet_copied = (
+            f"SELECT {columns} FROM {_LEGACY_PK_TABLE} AS legacy WHERE NOT EXISTS ("
+            "SELECT 1 FROM raw_messages AS current "
+            "WHERE current.flight_id = legacy.flight_id AND current.id = legacy.id)"
+        )
+        connection.execute(f"INSERT INTO raw_messages ({columns}) {not_yet_copied}")
+        connection.commit()
+
+        left_behind = connection.execute(
+            f"SELECT COUNT(*) AS n FROM ({not_yet_copied})"
+        ).fetchone()["n"]
+        if left_behind:
+            raise RawStoreError(
+                f"{left_behind} rows of {_LEGACY_PK_TABLE} could not be migrated to the "
+                "flight-scoped primary key; the table is left in place for inspection"
+            )
+        connection.execute(f"DROP TABLE {_LEGACY_PK_TABLE}")
+        connection.commit()
+
+    def _primary_key_of(self, table: str) -> list[str]:
+        rows = self._connection.execute(f"PRAGMA table_info({table})").fetchall()
+        keyed = sorted((row["pk"], row["name"]) for row in rows if row["pk"])
+        return [name for _, name in keyed]
+
+    def _table_exists(self, table: str) -> bool:
+        return bool(
+            self._connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (table,)
+            ).fetchall()
+        )
+
+    def _objects_on(self, table: str, kind: str) -> list[str]:
+        """שמות הטריגרים/האינדקסים של הטבלה, בלי האינדקסים שהמנוע יצר לבדו."""
+        rows = self._connection.execute(
+            "SELECT name FROM sqlite_master WHERE type = ? AND tbl_name = ? "
+            "AND name NOT LIKE 'sqlite_%'",
+            (kind, table),
+        ).fetchall()
+        return [row["name"] for row in rows]
 
     def _query(self, sql: str, params: tuple[object, ...] = ()) -> list[sqlite3.Row]:
         with self._lock:

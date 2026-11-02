@@ -131,7 +131,7 @@
             }
           },
           "400": {
-            "description": "אין מזהה טיסה, הקובץ ריק, אינו UTF-8, או גדול מהתקרה",
+            "description": "אין מזהה טיסה, הקובץ ריק, אינו UTF-8, גדול מהתקרה, או שאינו קובץ תמלול - אף שורה בו אינה מחזיקה את חמשת השדות",
             "content": {
               "application/json": {
                 "schema": {
@@ -289,7 +289,7 @@
           "transcript"
         ],
         "summary": "משפט בודד לפי מזהה",
-        "description": "המשפט כפי שנקלט, ללא שינוי - זו הדרך לחזור מאירוע לתמלול המקורי.",
+        "description": "המשפט כפי שנקלט, ללא שינוי - זו הדרך לחזור מאירוע לתמלול המקורי.\n\nהמזהה מגיע מהמקור ולכן הוא ייחודי *בתוך הטיסה*: שתי טיסות יכולות\nשתיהן למנות ``m01``. ``flight_id`` הוא מה שהופך את הצמד למפתח - ולכן\nחזרה מאירוע לתמלול תעביר את שני השדות (``Event`` מחזיק את שניהם).\nבלי טיסה, מזהה שקיים ביותר מאחת מחזיר 409 ולא שורה שרירותית.",
         "operationId": "get_message_messages__message_id__get",
         "parameters": [
           {
@@ -298,10 +298,28 @@
             "required": true,
             "schema": {
               "type": "string",
-              "description": "מזהה ההודעה",
+              "description": "מזהה ההודעה, כפי שהמקור שלח אותו",
               "title": "Message Id"
             },
-            "description": "מזהה ההודעה"
+            "description": "מזהה ההודעה, כפי שהמקור שלח אותו"
+          },
+          {
+            "name": "flight_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "הטיסה שבה לחפש. בלעדיו החיפוש הוא על פני המאגר, ומזהה שקיים בכמה טיסות מחזיר 409",
+              "title": "Flight Id"
+            },
+            "description": "הטיסה שבה לחפש. בלעדיו החיפוש הוא על פני המאגר, ומזהה שקיים בכמה טיסות מחזיר 409"
           }
         ],
         "responses": {
@@ -317,6 +335,16 @@
           },
           "404": {
             "description": "אין הודעה כזו",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "המזהה קיים בכמה טיסות - יש לחזור עם `flight_id`",
             "content": {
               "application/json": {
                 "schema": {

@@ -1,0 +1,18 @@
+# aura - מקרה גבול: duplicates
+#
+# נוצר אוטומטית מ-tests/fixtures/edge_cases/duplicates.yaml על ידי scripts/export_fixture_transcripts.py.
+# אין לערוך את הקובץ ישירות - ערכו את הפיקסצ'ר והריצו את הסקריפט מחדש.
+#
+# פורמט: message_id | timestamp | source | channel | text
+# 6 שורות הודעה.
+#
+# תוצאה צפויה בהעלאה דרך הקליינט: 4 נקלטות, 2 כפילויות, 0 ל-dead-letter.
+# מזהה הטיסה למטה הוא הנחיה שהקורא מפרש, ולכן אין צורך להקליד אותו.
+# flight_id: flight-edge-01
+
+flight-edge-01-m01 | 2026-09-04T08:00:00Z | operator | command | בקרה, נץ חמש, הכל תקין.
+flight-edge-01-m01 | 2026-09-04T08:00:00Z | operator | command | בקרה, נץ חמש, הכל תקין.
+                   | 2026-09-04T08:05:00Z | operator | command | בקרה, נץ חמש, ממשיכים בסיור.
+                   | 2026-09-04T08:05:00Z | operator | command | בקרה, נץ חמש, ממשיכים בסיור.
+flight-edge-01-m02 | 2026-09-04T08:10:00Z | operator | command | בקרה, נץ חמש, מתחילים ירידה.
+flight-edge-01-m03 | 2026-09-04T08:10:05Z | operator | command | בקרה, נץ חמש, גובה שלוש מאות מטר.
