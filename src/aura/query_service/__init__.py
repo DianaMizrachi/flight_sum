@@ -4,6 +4,7 @@ from aura.query_service.errors import (
     NaiveDatetimeError,
     QueryError,
     SummariesUnavailableError,
+    as_utc,
 )
 from aura.query_service.filters import CERTAINTY_ORDER, EventFilter, at_least
 from aura.query_service.models import (
@@ -37,5 +38,6 @@ __all__ = [
     "SummaryView",
     "TimelineEntry",
     "VersionDiff",
+    "as_utc",
     "at_least",
 ]

@@ -23,11 +23,18 @@ with real entities, and nothing anywhere to suggest the answer is to a
 different question than the one asked. For a tool whose whole purpose is
 reconstructing what was known at a moment, an answer that is confidently
 three hours off is worse than a refusal that names the fix.
+
+The refusal moves work to the caller, so :func:`as_utc` is the one
+blessed way to do that work: it lets a caller *declare* that a naive
+value is UTC. That keeps the decision where the knowledge is, and keeps
+it out of each caller's own conversion - which is where the silent guess
+would otherwise reappear, since ``astimezone`` on a naive value assumes
+the machine's zone rather than UTC.
 """
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 
 class QueryError(RuntimeError):
@@ -55,10 +62,28 @@ class NaiveDatetimeError(QueryError, ValueError):
         self.field = field
         self.value = value
         super().__init__(
-            f"{field}={value.isoformat()} has no timezone; "
-            "pass an aware datetime (the stores are UTC, e.g. "
-            f"{value.isoformat()}Z)"
+            f"{field}={value.isoformat()} has no timezone, so the moment it "
+            "names is ambiguous. Pass an aware datetime, or wrap it in "
+            "aura.query_service.as_utc() to declare that it is UTC."
         )
+
+
+def as_utc(value: datetime) -> datetime:
+    """מצהיר שזמן חסר אזור הוא UTC. ההצהרה היא של הקורא, במפורש.
+
+    הסירוב למעלה מעביר עבודה למי שקורא לשירות - שכבת ה-HTTP של שלב 10
+    תקבל מחרוזות מלקוחות, ולא כולן יישאו אזור זמן. בלי פונקציה אחת
+    לכך, כל קורא היה כותב את ההמרה בעצמו, וההמרה הזו היא בדיוק המקום
+    שבו נולד הניחוש השקט שהסירוב נועד למנוע: ``astimezone`` על זמן
+    חסר אזור מניח את שעת המכונה, לא UTC.
+
+    לכן יש דרך אחת, והיא מפורשת בשם: ``as_utc(value)`` אומר "אני יודע
+    שהזמן הזה חסר אזור, והוא UTC". זמן שכבר נושא אזור מומר ל-UTC ואינו
+    מוזז - ``as_utc`` על זמן ב-UTC+2 מחזיר את אותו רגע, בייצוג אחר.
+    """
+    if value.tzinfo is None or value.utcoffset() is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
 
 
 def require_aware(value: datetime | None, field: str) -> datetime | None:

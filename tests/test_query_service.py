@@ -15,7 +15,7 @@ it needs a long flight that the golden fixtures deliberately are not.
 from __future__ import annotations
 
 from dataclasses import fields
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 from golden_stores import load_flight
@@ -26,6 +26,7 @@ from aura.query_service import (
     NaiveDatetimeError,
     QueryService,
     SummariesUnavailableError,
+    as_utc,
     at_least,
 )
 from aura.query_service.models import StateView, TimelineEntry
@@ -953,3 +954,37 @@ def reconciled_with_summaries(reconciled):
     )
     yield QueryService(reconciled.events, reconciled.raw, summaries)
     summaries.close()
+
+# --- the one explicit way to declare a naive time ------------------------
+
+
+def test_the_refusal_names_the_way_out(loaded, service):
+    """הודעת השגיאה אומרת מה לעשות, לא רק מה שגוי."""
+    with pytest.raises(NaiveDatetimeError) as raised:
+        service.state_at(loaded.flight_id, NAIVE)
+    assert "as_utc" in str(raised.value)
+
+
+def test_declaring_a_naive_time_as_utc_makes_it_answerable(loaded, service):
+    """אחרי ההצהרה זו שאלה רגילה, ואותה תשובה כמו עם Z מפורש."""
+    at = datetime.fromisoformat(loaded.checkpoints[0]["timestamp"])
+    declared = as_utc(at.replace(tzinfo=None))
+    assert service.state_at(loaded.flight_id, declared) == service.state_at(
+        loaded.flight_id, at
+    )
+
+
+def test_as_utc_does_not_move_a_time_that_already_has_a_zone(loaded, service):
+    """זמן ב-UTC+2 מומר ליצוג UTC ונשאר אותו רגע.
+
+    זו ההבחנה שהופכת את ``as_utc`` לבטוחה: היא מצהירה על מה שחסר, ואינה
+    מפרשת מחדש מה שנאמר.
+    """
+    plus_two = datetime(2026, 9, 1, 8, 20, tzinfo=timezone(timedelta(hours=2)))
+    assert as_utc(plus_two) == datetime(2026, 9, 1, 6, 20, tzinfo=UTC)
+    assert as_utc(plus_two) == plus_two
+
+
+def test_as_utc_is_idempotent():
+    once = as_utc(NAIVE)
+    assert as_utc(once) == once
